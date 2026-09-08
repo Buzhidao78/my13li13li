@@ -9,12 +9,7 @@
         <span class="nav-link" :class="{ active: isHome }" @click="goHome">首页</span>
         <!-- 投稿入口：上传视频（需登录，登录后自动回跳）；进入投稿页时粉色高亮 -->
         <span class="nav-link nav-upload" :class="{ active: isUpload }" @click="goUpload">投稿</span>
-        <!-- 会员充值入口：跳转到充值页（需登录，登录后自动回跳） -->
-        <span class="nav-link nav-recharge" @click="goRecharge">会员充值</span>
-        <!-- 管理员审核台入口：仅 role=1 可见；蓝色描边与待办练习同款样式区分 -->
-        <span v-if="isAdmin" class="nav-link nav-audit" @click="goAudit">审核台</span>
-        <!-- 待办清单练习入口：纯前端练习页，不需要登录 -->
-        <span class="nav-link nav-todo" @click="goTodo">待办练习</span>
+        <!-- 会员充值 / 审核台 / 待办练习 三个入口已迁至个人中心卡面右侧（见 views/UserCenter.vue 的 .actions） -->
       </nav>
     </div>
 
@@ -111,9 +106,6 @@ const isHome = computed(() => router.currentRoute.value.path === '/')
 /** 是否在投稿页：控制"投稿"链接的高亮态 */
 const isUpload = computed(() => router.currentRoute.value.path === '/upload')
 
-/** 是否为管理员（role=1）：控制导航"审核台"入口的显示 */
-const isAdmin = computed(() => userStore.user?.role === 1)
-
 // ===== 搜索下拉浮层 =====
 const searchDropdownOpen = ref(false)
 const hotWords = ref([])
@@ -185,21 +177,6 @@ function goHome() {
 /** 进入个人中心（仅登录后可见入口，路由守卫兜底） */
 function goCenter() {
   router.push('/user/center')
-}
-
-/** 跳转到会员充值页（路由守卫会自动判断是否登录） */
-function goRecharge() {
-  router.push('/recharge')
-}
-
-/** 跳转到待办清单练习页（纯前端，无需登录） */
-function goTodo() {
-  router.push('/todo')
-}
-
-/** 跳转到管理员审核台（路由守卫会校验 role=1） */
-function goAudit() {
-  router.push('/admin/audit')
 }
 
 /** 跳转到投稿页（路由守卫会自动判断是否登录） */
@@ -321,49 +298,6 @@ function handleLogout() {
 .nav-link.active {
   color: #fb7299;
   font-weight: bold;
-}
-
-/* 会员充值入口：粉色高亮，突出可点击 */
-.nav-recharge {
-  color: #fb7299;
-  font-weight: bold;
-  border: 1px solid #fb7299;
-  border-radius: 14px;
-  padding: 3px 14px;
-  transition: all 0.2s;
-}
-
-.nav-recharge:hover {
-  background: #fb7299;
-  color: #fff;
-}
-
-/* 待办练习入口：蓝色描边，和充值入口区分 */
-.nav-todo {
-  color: #58b7ff;
-  border: 1px solid #58b7ff;
-  border-radius: 14px;
-  padding: 3px 14px;
-  transition: all 0.2s;
-}
-
-.nav-todo:hover {
-  background: #58b7ff;
-  color: #fff;
-}
-
-/* 管理员审核台入口：与待办练习同款蓝色描边；仅 role=1 可见（v-if 控制） */
-.nav-audit {
-  color: #58b7ff;
-  border: 1px solid #58b7ff;
-  border-radius: 14px;
-  padding: 3px 14px;
-  transition: all 0.2s;
-}
-
-.nav-audit:hover {
-  background: #58b7ff;
-  color: #fff;
 }
 
 /* ===== 搜索下拉浮层（NavBar 搜索框聚焦时显示） ===== */
