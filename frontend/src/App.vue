@@ -16,6 +16,13 @@ import { userStore } from './store/user'
 </script>
 
 <style>
+/* 全局：让页面滚动条始终存在（即使内容不足一屏也会保留滚动条轨道）。
+   这样在"可滚动页面"与"内容不足一屏的页面"之间跳转时，滚动条不会忽隐忽现，
+   避免整页因滚动条宽度让出/收回而左右"抖动" */
+html {
+  overflow-y: scroll;
+}
+
 body {
   margin: 0;
   font-family: 'Microsoft YaHei', Arial, sans-serif;
