@@ -35,6 +35,9 @@ public class SearchServiceImpl implements SearchService {
     /** 关键词最大长度（过长截断，防止无意义的长词污染热词榜） */
     private static final int KEYWORD_MAX_LEN = 30;
 
+    /** 热词/历史 key 过期时间：30 天（每次写入刷新，防 key 无限膨胀；练习场景足够） */
+    private static final java.time.Duration KEY_TTL = java.time.Duration.ofDays(30);
+
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
@@ -50,6 +53,8 @@ public class SearchServiceImpl implements SearchService {
         }
         // 1. 全站热词：搜索次数 +1
         stringRedisTemplate.opsForZSet().incrementScore(KEY_HOT, kw, 1);
+        // 刷新热词 key 过期时间
+        stringRedisTemplate.expire(KEY_HOT, KEY_TTL);
 
         // 2. 登录用户个人历史：member 用关键词（天然去重），score 用时间戳保证"最近搜索"在前
         if (userId != null) {
@@ -60,6 +65,8 @@ public class SearchServiceImpl implements SearchService {
             if (all != null && all.size() > HISTORY_MAX) {
                 stringRedisTemplate.opsForZSet().removeRange(historyKey, 0, all.size() - HISTORY_MAX - 1);
             }
+            // 刷新个人历史 key 过期时间
+            stringRedisTemplate.expire(historyKey, KEY_TTL);
         }
     }
 

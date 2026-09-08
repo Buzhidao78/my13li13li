@@ -85,6 +85,13 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+
+        <!-- 测试：JUnit5 + Spring Boot Test（可写单元/集成测试，mvn test 执行） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

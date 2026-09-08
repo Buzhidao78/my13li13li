@@ -50,20 +50,21 @@ public class UploadUtils {
      * 保存视频文件，返回对外访问路径（如 /upload/20260907/xxx.mp4）
      */
     public String saveVideo(MultipartFile file) {
-        return save(file, VIDEO_EXTS, MAX_VIDEO_SIZE);
+        return save(file, VIDEO_EXTS, MAX_VIDEO_SIZE, "video/");
     }
 
     /**
      * 保存封面图片，返回对外访问路径
      */
     public String saveImage(MultipartFile file) {
-        return save(file, IMAGE_EXTS, MAX_IMAGE_SIZE);
+        return save(file, IMAGE_EXTS, MAX_IMAGE_SIZE, "image/");
     }
 
     /**
-     * 通用保存逻辑：校验 → 生成路径 → 写入磁盘 → 返回访问路径
+     * 通用保存逻辑：校验（扩展名白名单 + 大小 + Content-Type）→ 生成路径 → 写入磁盘 → 返回访问路径
+     * @param expectedContentTypePrefix Content-Type 前缀（video/ 或 image/），防扩展名伪装
      */
-    private String save(MultipartFile file, List<String> allowExts, long maxSize) {
+    private String save(MultipartFile file, List<String> allowExts, long maxSize, String expectedContentTypePrefix) {
         // 1. 空文件校验
         if (file == null || file.isEmpty()) {
             throw new BusinessException("文件不能为空");
@@ -74,6 +75,12 @@ public class UploadUtils {
         String ext = StringUtils.getFilenameExtension(originalName);
         if (ext == null || !allowExts.contains(ext.toLowerCase(Locale.ROOT))) {
             throw new BusinessException("不支持的文件类型：" + originalName);
+        }
+
+        // 2.1 Content-Type 兜底校验：浏览器伪造扩展名时（如 .mp4 实际是 html），拒绝上传
+        String contentType = file.getContentType();
+        if (contentType == null || !contentType.toLowerCase(Locale.ROOT).startsWith(expectedContentTypePrefix)) {
+            throw new BusinessException("文件内容类型不合法，请上传正确的 " + expectedContentTypePrefix + " 文件");
         }
 
         // 3. 大小校验

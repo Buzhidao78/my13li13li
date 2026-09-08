@@ -6,10 +6,10 @@ spring:
     name: practice2-backend
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    # 请按你自己的 MySQL 账号密码修改 username / password
+    # 连接串/账号/密码可通过环境变量覆盖（生产环境务必设置 DB_PASSWORD，勿用默认值）
     url: jdbc:mysql://localhost:3306/practice2?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: root
-    password: 123456
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
   # Redis 配置（默认本机 6379，无需密码）
   data:
     redis:
@@ -45,11 +45,12 @@ file:
   # 目录里的文件通过 /upload/** 静态映射对外访问（见 config/WebConfig.java）
   upload-dir: ./upload
 
-# JWT 配置：secret 要足够长（>=32字节），生产环境请改成自己的随机字符串
+# JWT 配置：secret 要足够长（>=32字节）
+# 默认值仅供本地开发；生产环境必须通过环境变量 JWT_SECRET 传入随机字符串
 jwt:
-  secret: practice2-jwt-secret-key-please-change-it-0123456789
+  secret: ${JWT_SECRET:practice2-jwt-secret-key-please-change-it-0123456789}
   # token 有效期：毫秒，默认 7 天
-  expire: 604800000
+  expire: ${JWT_EXPIRE:604800000}
 
 mybatis-plus:
   configuration:
