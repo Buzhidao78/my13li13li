@@ -229,12 +229,18 @@ function onSearch() {
   keyword.value = ''
 }
 
-/** 退出登录：清登录态；若正停留在需登录页面（如个人中心），退出后回首页 */
+/**
+ * 退出登录：清登录态并统一跳回首页。
+ * 必须无条件回首页的原因（安全考虑）：
+ * 若停在退出前页面（如审核台 /admin/audit、充值页、通知中心），
+ * 换另一个账号登录时仍停留在该受限页面，可能造成普通用户看到管理界面的"越权视图"；
+ * 统一回首页后，再访问受限页会重新走路由守卫的登录 + 角色校验。
+ */
 function handleLogout() {
   clearAuth()
   unread.value = 0
-  const path = router.currentRoute.value.path
-  if (path.startsWith('/user/center') || path.startsWith('/recharge') || path.startsWith('/upload')) {
+  // 已在首页则无需重复导航
+  if (router.currentRoute.value.path !== '/') {
     router.push('/')
   }
 }
