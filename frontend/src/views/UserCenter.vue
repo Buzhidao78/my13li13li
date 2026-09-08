@@ -7,6 +7,11 @@
         <div class="user-meta">
           <div class="uname">{{ userStore.user?.nickname || '未登录' }}</div>
           <div class="uphone">{{ userStore.user?.phone }}</div>
+          <!-- 会员信息：仅有效会员(isMember=true)展示；普通用户不显示此行 -->
+          <div v-if="memberInfo && memberInfo.isMember" class="umember" :class="`ml-${memberInfo.level}`">
+            <span class="m-tag">{{ memberInfo.levelName }}</span>
+            <span class="m-meta">剩 {{ memberInfo.remainDays }} 天 · 到期 {{ formatDate(memberInfo.memberExpire) }}</span>
+          </div>
         </div>
         <!-- 右侧动作区：纵向排列"会员充值 / 待办练习 / 审核"
              审核仅管理员可见；纵向位置在"观看历史"tab 之后，符合用户指定的排序 -->
@@ -69,6 +74,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { userStore } from '../store/user'
 import { getMyVideos, getFavorites, getHistory } from '../api/video'
+import { getMemberInfo } from '../api/order'
 
 const router = useRouter()
 
@@ -116,11 +122,25 @@ function switchTab(key) {
   load()
 }
 
-/** 加载当前 tab 的一页数据 */
+/** 会员信息：登录后从 /api/member/info 拉取；非会员或失败时为 null（不展示） */
+const memberInfo = ref(null)
+
+/** 拉取当前 tab 的一页数据 */
 async function load() {
   page.value = 1
   total.value = 0
   await loadPage()
+}
+
+/** 拉取会员信息（登录时调用） */
+async function loadMember() {
+  try {
+    const res = await getMemberInfo()
+    memberInfo.value = res.data
+  } catch {
+    // 拉取失败保持 null，不展示会员行
+    memberInfo.value = null
+  }
 }
 
 async function loadPage() {
@@ -160,7 +180,14 @@ function formatTime(t) {
   return String(t).replace('T', ' ').slice(0, 16)
 }
 
+/** 会员到期时间格式化为 YYYY-MM-DD（不显示时分秒，避免与视频列表时间样式混淆） */
+function formatDate(t) {
+  if (!t) return ''
+  return String(t).slice(0, 10)
+}
+
 load()
+loadMember()
 </script>
 
 <style scoped>
@@ -217,6 +244,35 @@ load()
   color: #999;
   margin-top: 4px;
 }
+
+/* 会员信息行：等级徽章 + 剩余天数 + 到期日 */
+.umember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.umember .m-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #fb7299, #f7598c);
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.umember .m-meta {
+  color: #999;
+}
+
+/* 各等级配色变体（徽章颜色不同） */
+.umember.ml-1 .m-tag { background: linear-gradient(90deg, #aab8c2, #8a9aa5); }   /* 白银 */
+.umember.ml-2 .m-tag { background: linear-gradient(90deg, #f5a623, #e08a0a); }   /* 黄金 */
+.umember.ml-3 .m-tag { background: linear-gradient(90deg, #5b8cff, #3b6cff); }   /* 钻石 */
 
 /* ===== 右侧动作区：纵向排列 ===== */
 .actions {
