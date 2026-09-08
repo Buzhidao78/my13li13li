@@ -1,0 +1,67 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: practice2-backend
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 请按你自己的 MySQL 账号密码修改 username / password
+    url: jdbc:mysql://localhost:3306/practice2?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+  # Redis 配置（默认本机 6379，无需密码）
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+
+  # RabbitMQ 配置（默认本机 5672，guest/guest 仅限本机访问）
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    # 生产者 confirm：消息投递到交换机后，RabbitMQ 会回调确认结果（可靠投递的关键）
+    publisher-confirm-type: correlated
+    # 生产者 return：消息路由不到任何队列时，回调通知（配合 confirm 判断消息是否真正入队）
+    publisher-returns: true
+    listener:
+      simple:
+        # 手动 ACK：消费者处理成功才确认；失败可以重回队列，保证消息不丢
+        acknowledge-mode: manual
+        # 单消费者接收消息数：不限制并发，方便观察日志
+        prefetch: 1
+
+# 订单业务相关配置（练习用）
+order:
+  # 未支付订单自动关闭的延时（毫秒）：练习时设短一点（如 30 秒）方便观察延时关单效果
+  ttl-ms: 30000
+
+# 文件上传配置（视频模块）
+file:
+  # 上传文件存储根目录：相对路径，相对后端启动目录（backend/ 下会生成 upload/ 文件夹）
+  # 目录里的文件通过 /upload/** 静态映射对外访问（见 config/WebConfig.java）
+  upload-dir: ./upload
+
+# JWT 配置：secret 要足够长（>=32字节），生产环境请改成自己的随机字符串
+jwt:
+  secret: practice2-jwt-secret-key-please-change-it-0123456789
+  # token 有效期：毫秒，默认 7 天
+  expire: 604800000
+
+mybatis-plus:
+  configuration:
+    # 下划线转驼峰：数据库字段 create_time -> Java 属性 createTime
+    map-underscore-to-camel-case: true
+    # 控制台打印 SQL，方便练习时观察
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      # 主键自增
+      id-type: auto
+      # 逻辑删除字段配置
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
