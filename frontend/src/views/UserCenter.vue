@@ -1,12 +1,19 @@
 <template>
   <div class="center-page">
     <div class="center-card">
-      <!-- 用户信息 -->
+      <!-- 用户信息 + 右侧动作区 -->
       <div class="user-info">
         <span class="avatar">{{ firstChar }}</span>
-        <div>
+        <div class="user-meta">
           <div class="uname">{{ userStore.user?.nickname || '未登录' }}</div>
           <div class="uphone">{{ userStore.user?.phone }}</div>
+        </div>
+        <!-- 右侧动作区：纵向排列"会员充值 / 待办练习 / 审核"
+             审核仅管理员可见；纵向位置在"观看历史"tab 之后，符合用户指定的排序 -->
+        <div class="actions">
+          <button class="action-btn recharge" @click="goRecharge">会员充值</button>
+          <button class="action-btn todo" @click="goTodo">待办练习</button>
+          <button v-if="isAdmin" class="action-btn audit" @click="goAudit">审核</button>
         </div>
       </div>
 
@@ -83,6 +90,24 @@ const emptyText = computed(() => ({ videos: '还没有投稿，去首页点"投�
 const firstChar = computed(() =>
   userStore.user?.nickname ? userStore.user.nickname.charAt(0) : '用'
 )
+
+/** 是否为管理员：控制右侧"审核"按钮显示 */
+const isAdmin = computed(() => userStore.user?.role === 1)
+
+/** 跳转到会员充值页（需登录，路由守卫兜底） */
+function goRecharge() {
+  router.push('/recharge')
+}
+
+/** 跳转到待办练习页（无需登录） */
+function goTodo() {
+  router.push('/todo')
+}
+
+/** 跳转到管理员审核台 */
+function goAudit() {
+  router.push('/admin/audit')
+}
 
 /** 切换 tab：先清空列表（避免展示上一个 tab 的残留），再加载 */
 function switchTab(key) {
@@ -173,6 +198,12 @@ load()
   align-items: center;
   justify-content: center;
   font-weight: bold;
+  flex-shrink: 0;
+}
+
+.user-meta {
+  flex: 1;
+  min-width: 0;
 }
 
 .uname {
@@ -185,6 +216,54 @@ load()
   font-size: 13px;
   color: #999;
   margin-top: 4px;
+}
+
+/* ===== 右侧动作区：纵向排列 ===== */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.action-btn {
+  height: 32px;
+  padding: 0 16px;
+  border: 1px solid;
+  border-radius: 16px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.action-btn.recharge {
+  color: #fb7299;
+  border-color: #fb7299;
+}
+.action-btn.recharge:hover {
+  background: #fb7299;
+  color: #fff;
+}
+
+.action-btn.todo {
+  color: #58b7ff;
+  border-color: #58b7ff;
+}
+.action-btn.todo:hover {
+  background: #58b7ff;
+  color: #fff;
+}
+
+.action-btn.audit {
+  color: #f59e0b;
+  border-color: #f59e0b;
+}
+.action-btn.audit:hover {
+  background: #f59e0b;
+  color: #fff;
 }
 
 .tabs {
