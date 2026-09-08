@@ -11,14 +11,16 @@
         <span class="nav-link nav-upload" :class="{ active: isUpload }" @click="goUpload">投稿</span>
         <!-- 会员充值入口：跳转到充值页（需登录，登录后自动回跳） -->
         <span class="nav-link nav-recharge" @click="goRecharge">会员充值</span>
+        <!-- 管理员审核台入口：仅 role=1 可见；蓝色描边与待办练习同款样式区分 -->
+        <span v-if="isAdmin" class="nav-link nav-audit" @click="goAudit">审核台</span>
         <!-- 待办清单练习入口：纯前端练习页，不需要登录 -->
         <span class="nav-link nav-todo" @click="goTodo">待办练习</span>
       </nav>
     </div>
 
     <div class="nav-right">
-      <!-- 搜索框 -->
-      <div class="search-box">
+      <!-- 搜索框：在 /search 页面隐藏，避免与该页自带的搜索框重复 -->
+      <div v-if="!isSearch" class="search-box">
         <input v-model="keyword" placeholder="搜索你感兴趣的视频" @keyup.enter="onSearch" />
         <button class="search-btn" @click="onSearch">
           <!-- 放大镜图标（内联 SVG，避免用 emoji） -->
@@ -77,6 +79,12 @@ const isHome = computed(() => router.currentRoute.value.path === '/')
 /** 是否在投稿页：控制"投稿"链接的高亮态 */
 const isUpload = computed(() => router.currentRoute.value.path === '/upload')
 
+/** 是否在搜索页：在 /search 时隐藏顶部搜索框，避免与该页自带搜索框重复 */
+const isSearch = computed(() => router.currentRoute.value.path === '/search')
+
+/** 是否为管理员（role=1）：控制导航"审核台"入口的显示 */
+const isAdmin = computed(() => userStore.user?.role === 1)
+
 /** 返回首页 */
 function goHome() {
   router.push('/')
@@ -95,6 +103,11 @@ function goRecharge() {
 /** 跳转到待办清单练习页（纯前端，无需登录） */
 function goTodo() {
   router.push('/todo')
+}
+
+/** 跳转到管理员审核台（路由守卫会校验 role=1） */
+function goAudit() {
+  router.push('/admin/audit')
 }
 
 /** 跳转到投稿页（路由守卫会自动判断是否登录） */
@@ -136,11 +149,14 @@ function openLogin() {
   userStore.loginVisible = true
 }
 
-/** 搜索：跳转搜索结果页，带关键词 */
+/** 搜索：带关键词跳到 /search 出结果；空关键词跳到 /search 出热词/历史引导页 */
 function onSearch() {
   const kw = keyword.value.trim()
-  if (!kw) return
-  router.push(`/search?kw=${encodeURIComponent(kw)}`)
+  if (kw) {
+    router.push(`/search?kw=${encodeURIComponent(kw)}`)
+  } else {
+    router.push('/search')
+  }
   keyword.value = ''
 }
 
@@ -240,6 +256,20 @@ function handleLogout() {
 }
 
 .nav-todo:hover {
+  background: #58b7ff;
+  color: #fff;
+}
+
+/* 管理员审核台入口：与待办练习同款蓝色描边；仅 role=1 可见（v-if 控制） */
+.nav-audit {
+  color: #58b7ff;
+  border: 1px solid #58b7ff;
+  border-radius: 14px;
+  padding: 3px 14px;
+  transition: all 0.2s;
+}
+
+.nav-audit:hover {
   background: #58b7ff;
   color: #fff;
 }

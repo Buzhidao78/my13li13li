@@ -78,7 +78,12 @@ export function getMyVideos(params) {
   return request.get('/video/my', { params })
 }
 
-/** 审核视频：status = 1 通过 / 2 驳回（阶段一测试入口，正式管理后台在运营阶段做） */
+/** 审核视频：status = 1 通过 / 2 驳回（仅管理员可调，后端 service 校验 role） */
 export function auditVideo(id, status) {
   return request.post(`/video/${id}/audit`, null, { params: { status } })
+}
+
+/** 管理员分页查询全站"待审核"视频（仅管理员可调） */
+export function getPendingVideos(params) {
+  return request.get('/video/pending', { params })
 }

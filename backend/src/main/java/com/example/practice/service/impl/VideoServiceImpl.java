@@ -248,6 +248,20 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
+    public IPage<VideoVO> listPending(long page, long size, Long operatorId) {
+        // 仅管理员可调用：与 audit 接口一致的权限模型
+        if (!isAdmin(operatorId)) {
+            throw new BusinessException("无权限：仅管理员可查看待审核视频");
+        }
+        // 按提交时间正序排：先提交的先审，避免新视频堆积在最后一页
+        Page<Video> p = videoMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<Video>()
+                        .eq(Video::getStatus, VideoStatus.PENDING)
+                        .orderByAsc(Video::getCreateTime));
+        return p.convert(this::toVO);
+    }
+
+    @Override
     public void audit(Long id, int status, Long operatorId) {
         // 审核是平台运营动作，只有管理员（role=1）能操作，防止任意登录用户越权
         if (!isAdmin(operatorId)) {

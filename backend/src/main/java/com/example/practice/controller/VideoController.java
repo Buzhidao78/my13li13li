@@ -110,6 +110,16 @@ public class VideoController {
     }
 
     /**
+     * 管理员分页查询全站"待审核"视频（需登录且 role=1）
+     * 用 /pending 而不是 /audit/pending，避免与 POST /{id}/audit 路径冲突
+     */
+    @GetMapping("/pending")
+    public Result<IPage<VideoVO>> pending(@RequestParam(defaultValue = "1") long page,
+                                          @RequestParam(defaultValue = "20") long size) {
+        return Result.success(videoService.listPending(page, size, currentUserId()));
+    }
+
+    /**
      * 审核视频（仅管理员）：把"待审核"改为"已发布(1)"或"已驳回(2)"
      * 权限在 service 层校验：操作者必须是 role=1 的管理员（测试用管理员：admin / 123456）
      */

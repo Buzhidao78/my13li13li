@@ -53,7 +53,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VideoCard from '../components/VideoCard.vue'
 import { searchVideos, getHotSearch, recordSearch, getSearchHistory, clearSearchHistory } from '../api/search'
@@ -81,6 +81,10 @@ async function doSearch() {
   if (!kw) return
   if (searching.value) return
   searching.value = true
+  // 新搜索时显式重置分页状态：避免 page 累加导致第二次搜索请求到第 N 页（命中空集）
+  page.value = 1
+  videos.value = []
+  total.value = 0
   try {
     // 记录搜索（热词+1，登录用户写历史），失败不影响搜索本身
     try { await recordSearch(kw) } catch { /* 忽略 */ }
@@ -134,6 +138,22 @@ async function loadSuggest() {
     history.value = []
   }
 }
+
+/**
+ * 结果态清空输入框 → 回到引导态（热词/历史）。
+ * 首次进入 /search?kw=xxx 时 keyword 从空变为非空（onMounted 写入），不应被本 watch 干扰，
+ * 因为 onMounted 早于本 watch 触发后(已 searched=true 再清空才进引导)
+ */
+watch(keyword, (val) => {
+  if (!val.trim() && searched.value) {
+    searched.value = false
+    lastKeyword.value = ''
+    videos.value = []
+    total.value = 0
+    page.value = 1
+    loadSuggest()
+  }
+})
 
 /** 清空搜索历史 */
 async function onClearHistory() {

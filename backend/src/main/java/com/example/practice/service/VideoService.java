@@ -53,6 +53,14 @@ public interface VideoService {
     IPage<VideoVO> listMy(Long userId, long page, long size);
 
     /**
+     * 管理员分页查询全站"待审核"视频（仅 role=1 可调）
+     * @param operatorId 当前操作者 ID（内部校验是否为管理员）
+     * @param page       页码（从 1 开始）
+     * @param size       每页条数
+     */
+    IPage<VideoVO> listPending(long page, long size, Long operatorId);
+
+    /**
      * 审核视频：只有"待审核"状态能审核，可改为"已发布"或"已驳回"
      * 权限：仅管理员（role=1）可审核，防止任意登录用户越权
      * @param operatorId 当前操作者 ID（内部校验是否为管理员）

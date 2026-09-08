@@ -59,6 +59,13 @@ const routes = [
     name: 'Notification',
     component: () => import('../views/Notification.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    // 管理员审核台：需登录且 role=1
+    path: '/admin/audit',
+    name: 'Audit',
+    component: () => import('../views/Audit.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true }
   }
 ]
 
@@ -78,6 +85,14 @@ router.beforeEach((to) => {
     userStore.redirectTo = to.fullPath
     userStore.loginVisible = true
     return false
+  }
+  if (to.meta && to.meta.requiresAdmin) {
+    // 仅管理员（role=1）可访问；非管理员直接拦截回首页（后端 service 也会再校验一次）
+    const u = userStore.user
+    if (!u || u.role !== 1) {
+      alert('仅管理员可访问此页面')
+      return { path: '/' }
+    }
   }
 })
 
