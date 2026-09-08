@@ -19,15 +19,46 @@
     </div>
 
     <div class="nav-right">
-      <!-- 搜索框：在 /search 页面隐藏，避免与该页自带的搜索框重复 -->
-      <div v-if="!isSearch" class="search-box">
-        <input v-model="keyword" placeholder="搜索你感兴趣的视频" @keyup.enter="onSearch" />
-        <button class="search-btn" @click="onSearch">
-          <!-- 放大镜图标（内联 SVG，避免用 emoji） -->
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-            <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z" />
-          </svg>
-        </button>
+      <!-- 搜索框（带下拉浮层）：永远显示；点击/聚焦时下拉展示「搜索历史 + 全站热搜」 -->
+      <div class="search-wrap">
+        <div class="search-box">
+          <input
+            v-model="keyword"
+            class="search-input"
+            placeholder="搜索你感兴趣的视频"
+            @focus="onSearchFocus"
+            @blur="onSearchBlur"
+            @keyup.enter="onSearch"
+          />
+          <button class="search-btn" @click="onSearch">
+            <!-- 放大镜图标（内联 SVG，避免用 emoji） -->
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+              <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z" />
+            </svg>
+          </button>
+        </div>
+        <!-- 下拉浮层：仅在聚焦时显示；下拉项用 @mousedown.prevent 避免 blur 抢先收起 -->
+        <div v-if="searchDropdownOpen" class="search-dropdown">
+          <div v-if="userStore.user && searchHistory.length > 0" class="sd-section">
+            <div class="sd-title">
+              <span>搜索历史</span>
+              <span class="sd-clear" @mousedown.prevent @click="clearHistory">清空</span>
+            </div>
+            <div class="sd-chips">
+              <span v-for="w in searchHistory" :key="w" class="sd-chip" @mousedown.prevent @click="pickWord(w)">{{ w }}</span>
+            </div>
+          </div>
+          <div class="sd-section">
+            <div class="sd-title">全站热搜 Top10</div>
+            <ul class="sd-hot-list">
+              <li v-for="(w, idx) in hotWords.slice(0, 10)" :key="w" @mousedown.prevent @click="pickWord(w)">
+                <span class="sd-num" :class="{ top: idx < 3 }">{{ idx + 1 }}</span>
+                <span class="sd-word">{{ w }}</span>
+              </li>
+              <li v-if="hotWords.length === 0" class="sd-empty">暂无热搜</li>
+            </ul>
+          </div>
+        </div>
       </div>
 
       <!-- 消息铃铛：登录后显示，未读数红点；未登录点击弹登录框 -->
@@ -65,6 +96,7 @@ import { computed, ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { userStore, clearAuth } from '../store/user'
 import { getUnreadCount } from '../api/notification'
+import { getHotSearch, getSearchHistory, clearSearchHistory } from '../api/search'
 
 // 频道导航在重构后已无假链接：剩余均为真实页面入口。
 // （原"直播/番剧/游戏/推荐"等假频道已移除，避免点击无响应的误导交互）
@@ -79,11 +111,71 @@ const isHome = computed(() => router.currentRoute.value.path === '/')
 /** 是否在投稿页：控制"投稿"链接的高亮态 */
 const isUpload = computed(() => router.currentRoute.value.path === '/upload')
 
-/** 是否在搜索页：在 /search 时隐藏顶部搜索框，避免与该页自带搜索框重复 */
-const isSearch = computed(() => router.currentRoute.value.path === '/search')
-
 /** 是否为管理员（role=1）：控制导航"审核台"入口的显示 */
 const isAdmin = computed(() => userStore.user?.role === 1)
+
+// ===== 搜索下拉浮层 =====
+const searchDropdownOpen = ref(false)
+const hotWords = ref([])
+const searchHistory = ref([])
+
+/** 加载搜索建议：全站热搜 + 登录用户的搜索历史 */
+async function loadSearchSuggest() {
+  try {
+    const r = await getHotSearch()
+    hotWords.value = r.data || []
+  } catch {
+    hotWords.value = []
+  }
+  if (userStore.user) {
+    try {
+      const r = await getSearchHistory()
+      searchHistory.value = r.data || []
+    } catch {
+      searchHistory.value = []
+    }
+  } else {
+    searchHistory.value = []
+  }
+}
+
+/** 搜索框聚焦：打开下拉（不重复请求，数据已在挂载时加载过） */
+function onSearchFocus() {
+  searchDropdownOpen.value = true
+}
+
+/** 搜索框失焦：延迟关闭，给下拉项的 click 留出时间 */
+function onSearchBlur() {
+  setTimeout(() => {
+    searchDropdownOpen.value = false
+  }, 200)
+}
+
+/** 点击下拉项（热词 / 历史）：填入关键词并触发搜索 */
+function pickWord(w) {
+  keyword.value = w
+  searchDropdownOpen.value = false
+  onSearch()
+}
+
+/** 清空搜索历史（仅当前用户的服务器端历史） */
+async function clearHistory() {
+  try {
+    await clearSearchHistory()
+    searchHistory.value = []
+  } catch {
+    /* 忽略 */
+  }
+}
+
+// 登录状态变化时刷新历史（已登录会拉历史，未登录清空）
+watch(() => userStore.user, loadSearchSuggest)
+onMounted(loadSearchSuggest)
+
+// 路由跳转时关闭下拉，避免在其它页面下拉仍浮着
+watch(() => router.currentRoute.value.path, () => {
+  searchDropdownOpen.value = false
+})
 
 /** 返回首页 */
 function goHome() {
@@ -272,6 +364,110 @@ function handleLogout() {
 .nav-audit:hover {
   background: #58b7ff;
   color: #fff;
+}
+
+/* ===== 搜索下拉浮层（NavBar 搜索框聚焦时显示） ===== */
+.search-wrap {
+  position: relative;
+}
+
+.search-dropdown {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  width: 380px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+  color: #333;
+  z-index: 200; /* 与登录弹窗同层，覆盖页面内容 */
+  padding: 6px 0 8px;
+}
+
+.sd-section {
+  padding: 10px 14px;
+  border-bottom: 1px solid #f0f0f3;
+}
+.sd-section:last-child {
+  border-bottom: none;
+}
+
+.sd-title {
+  font-size: 13px;
+  color: #666;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sd-clear {
+  font-size: 12px;
+  color: #aaa;
+  cursor: pointer;
+}
+.sd-clear:hover {
+  color: #fb7299;
+}
+
+.sd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sd-chip {
+  padding: 4px 12px;
+  background: #f5f5f7;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #555;
+  cursor: pointer;
+  user-select: none;
+}
+.sd-chip:hover {
+  background: #fdeef3;
+  color: #fb7299;
+}
+
+.sd-hot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sd-hot-list li {
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #333;
+}
+.sd-hot-list li:hover {
+  background: #f5f5f7;
+}
+.sd-num {
+  width: 20px;
+  text-align: center;
+  color: #999;
+  font-weight: bold;
+  font-size: 13px;
+}
+.sd-num.top {
+  color: #e04343;
+}
+.sd-word {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sd-empty {
+  color: #ccc;
+  padding: 6px 14px;
+  font-size: 12px;
 }
 
 .nav-right {

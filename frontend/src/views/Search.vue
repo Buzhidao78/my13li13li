@@ -1,36 +1,10 @@
 <template>
   <div class="search-page">
-    <!-- 搜索框：顶部输入，回车/点击触发搜索 -->
-    <div class="search-bar">
-      <input
-        v-model="keyword"
-        class="search-input"
-        placeholder="搜索你感兴趣的视频"
-        maxlength="30"
-        @keyup.enter="doSearch"
-      />
-      <button class="search-btn" :disabled="searching" @click="doSearch">搜索</button>
-    </div>
+    <!-- 搜索框已移至 NavBar 顶部；本页不再自带输入框，避免重复 -->
 
-    <!-- 搜索前：展示热门搜索词 + 我的搜索历史 -->
-    <div v-if="!searched" class="suggest">
-      <div class="hot">
-        <div class="section-title">热门搜索</div>
-        <div class="chips">
-          <span v-for="w in hotWords" :key="w" class="chip hot-chip" @click="searchByWord(w)">{{ w }}</span>
-          <span v-if="hotWords.length === 0" class="empty-tip">暂无热门词，快来搜索第一个吧</span>
-        </div>
-      </div>
-
-      <div v-if="history.length > 0" class="history">
-        <div class="section-title">
-          搜索历史
-          <span class="clear-btn" @click="onClearHistory">清空</span>
-        </div>
-        <div class="chips">
-          <span v-for="w in history" :key="w" class="chip" @click="searchByWord(w)">{{ w }}</span>
-        </div>
-      </div>
+    <!-- 搜索前：简洁提示，让用户使用 NavBar 搜索框 -->
+    <div v-if="!searched" class="empty-tip">
+      请在顶部搜索框输入关键词，或点击搜索框查看<strong>热搜 / 搜索历史</strong>
     </div>
 
     <!-- 搜索结果：关键词 + 视频卡片网格 -->
@@ -53,20 +27,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import VideoCard from '../components/VideoCard.vue'
-import { searchVideos, getHotSearch, recordSearch, getSearchHistory, clearSearchHistory } from '../api/search'
-import { userStore } from '../store/user'
+import { searchVideos, recordSearch } from '../api/search'
 
 const route = useRoute()
 const router = useRouter()
 
 const keyword = ref('')
 const lastKeyword = ref('')   // 当前已搜索的关键词（用于展示结果标题）
-const searched = ref(false)   // 是否已展示搜索结果（false 时展示热词/历史引导）
-const hotWords = ref([])
-const history = ref([])
+const searched = ref(false)   // 是否已展示搜索结果（false 时展示"请用顶部搜索框"引导）
 const videos = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -91,16 +62,9 @@ async function doSearch() {
     await loadPage(true, kw)
     lastKeyword.value = kw
     searched.value = true
-    loadSuggest() // 顺带刷新热词/历史
   } finally {
     searching.value = false
   }
-}
-
-/** 点击热词/历史词条：填入输入框并搜索 */
-function searchByWord(w) {
-  keyword.value = w
-  doSearch()
 }
 
 /** 加载一页结果：replace=true 覆盖（新搜索），false 追加（加载更多） */
@@ -123,38 +87,6 @@ async function loadMore() {
   await loadPage(false)
 }
 
-/** 拉取热词 + 我的历史（登录才拉历史） */
-async function loadSuggest() {
-  try {
-    const res = await getHotSearch()
-    hotWords.value = res.data || []
-  } catch { hotWords.value = [] }
-  if (userStore.user) {
-    try {
-      const res = await getSearchHistory()
-      history.value = res.data || []
-    } catch { history.value = [] }
-  } else {
-    history.value = []
-  }
-}
-
-/**
- * 结果态清空输入框 → 回到引导态（热词/历史）。
- * 首次进入 /search?kw=xxx 时 keyword 从空变为非空（onMounted 写入），不应被本 watch 干扰，
- * 因为 onMounted 早于本 watch 触发后(已 searched=true 再清空才进引导)
- */
-watch(keyword, (val) => {
-  if (!val.trim() && searched.value) {
-    searched.value = false
-    lastKeyword.value = ''
-    videos.value = []
-    total.value = 0
-    page.value = 1
-    loadSuggest()
-  }
-})
-
 /** 清空搜索历史 */
 async function onClearHistory() {
   try {
@@ -168,14 +100,13 @@ function goDetail(id) {
 }
 
 onMounted(() => {
-  // 支持从导航栏带着关键词进来：/search?kw=xxx 直接出结果
+  // 支持从 NavBar 带着关键词进来：/search?kw=xxx 直接出结果
   const kw = route.query.kw
   if (kw) {
     keyword.value = kw
     doSearch()
-  } else {
-    loadSuggest()
   }
+  // 没有 kw：保持引导态（"请在顶部搜索框输入..."），热词/历史由 NavBar 下拉加载
 })
 </script>
 
@@ -183,109 +114,28 @@ onMounted(() => {
 .search-page {
   max-width: 1200px;
   margin: 0 auto;
+  /* 顶部不再有自带搜索框，预留导航栏高度 + 一点呼吸即可 */
   padding: 90px 24px 40px;
   min-height: 100vh;
 }
 
-/* 顶部搜索框 */
-.search-bar {
-  display: flex;
-  gap: 10px;
-  max-width: 640px;
-  margin: 0 auto 30px;
-}
-
-.search-input {
-  flex: 1;
-  height: 44px;
-  border: 2px solid #fb7299;
-  border-radius: 22px;
-  padding: 0 20px;
-  font-size: 15px;
-  outline: none;
-}
-
-.search-btn {
-  width: 96px;
-  border: none;
-  border-radius: 22px;
-  background: #fb7299;
-  color: #fff;
-  font-size: 15px;
-  cursor: pointer;
-}
-
-.search-btn:disabled {
-  opacity: 0.6;
-}
-
-/* 搜索前的引导区 */
-.suggest {
+/* 引导态：简洁提示让用户使用 NavBar 搜索框 */
+.empty-tip {
   max-width: 640px;
   margin: 0 auto;
-}
-
-.section-title {
-  font-size: 15px;
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 12px;
-}
-
-.history .section-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.clear-btn {
-  font-size: 12px;
-  font-weight: normal;
-  color: #999;
-  cursor: pointer;
-}
-
-.clear-btn:hover {
-  color: #fb7299;
-}
-
-.hot {
-  margin-bottom: 26px;
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.chip {
-  padding: 6px 14px;
-  border-radius: 16px;
-  background: #f5f5f7;
-  color: #555;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.chip:hover {
-  color: #fb7299;
-  background: #fdeef3;
-}
-
-.hot-chip {
-  color: #fb7299;
-  border: 1px solid #ffd6e2;
+  padding: 40px 0;
+  text-align: center;
+  font-size: 14px;
+  color: #888;
   background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+.empty-tip strong {
+  color: #fb7299;
+  margin: 0 4px;
 }
 
-.empty-tip {
-  color: #bbb;
-  font-size: 13px;
-}
-
-/* 搜索结果 */
 .result-title {
   font-size: 15px;
   color: #555;
