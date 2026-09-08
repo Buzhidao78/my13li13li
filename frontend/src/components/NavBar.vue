@@ -7,10 +7,10 @@
       <!-- 真实可用的导航：每个入口都有对应页面（此前的"直播/番剧/游戏"等假频道已移除） -->
       <nav class="nav-links">
         <span class="nav-link" :class="{ active: isHome }" @click="goHome">首页</span>
+        <!-- 投稿入口：上传视频（需登录，登录后自动回跳）；进入投稿页时粉色高亮 -->
+        <span class="nav-link nav-upload" :class="{ active: isUpload }" @click="goUpload">投稿</span>
         <!-- 会员充值入口：跳转到充值页（需登录，登录后自动回跳） -->
         <span class="nav-link nav-recharge" @click="goRecharge">会员充值</span>
-        <!-- 投稿入口：上传视频（需登录，登录后自动回跳） -->
-        <span class="nav-link nav-upload" @click="goUpload">投稿</span>
         <!-- 待办清单练习入口：纯前端练习页，不需要登录 -->
         <span class="nav-link nav-todo" @click="goTodo">待办练习</span>
       </nav>
@@ -73,6 +73,9 @@ const router = useRouter()
 
 /** 是否在首页：控制"首页"链接的高亮态 */
 const isHome = computed(() => router.currentRoute.value.path === '/')
+
+/** 是否在投稿页：控制"投稿"链接的高亮态 */
+const isUpload = computed(() => router.currentRoute.value.path === '/upload')
 
 /** 返回首页 */
 function goHome() {

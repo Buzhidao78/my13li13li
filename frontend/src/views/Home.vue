@@ -94,8 +94,11 @@ function selectFollow() {
 
 /** 切换分类：退出关注模式，重置到第一页重新加载 */
 function selectCategory(v) {
+  // 去抖条件：仅在"不在关注模式 且 点击的是当前分类"时跳过。
+  // 若从"关注"切回(此时 category 仍是进入关注前的值,与点击的分类常相同),
+  // 必须强制 reload,否则列表停留在空的关注流上(表现为页面空白,需手动刷新)
+  if (!followMode.value && category.value === v) return
   followMode.value = false
-  if (category.value === v) return
   category.value = v
   reload()
 }
