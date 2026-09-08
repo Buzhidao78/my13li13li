@@ -602,13 +602,23 @@ public class VideoServiceImpl implements VideoService {
                 .setSql("`" + column + "` = `" + column + "` + (" + delta + ")"));
     }
 
-    /** 实体 → VO：联查作者昵称 */
+    /**
+     * 实体 → VO：联查作者昵称，并合并 Redis 播放量增量
+     * 合并逻辑与 detail 端点保持一致——这样列表(首页/收藏/历史/我的视频/搜索/feed)与详情页的播放数实时同步，
+     * 不用等 5 分钟 CountSyncTask 落库，切换页面不会再出现"列表 0 / 详情 4"的错位
+     */
     private VideoVO toVO(Video video) {
         if (video == null) {
             return null;
         }
         User author = userMapper.selectById(video.getUserId());
-        return VideoVO.from(video, author == null ? null : author.getNickname());
+        VideoVO vo = VideoVO.from(video, author == null ? null : author.getNickname());
+        // 播放量 = DB 字段 + Redis 未落库增量
+        String playInc = stringRedisTemplate.opsForValue().get(KEY_PLAY + video.getId());
+        if (playInc != null) {
+            vo.setPlayCount(vo.getPlayCount() + Integer.parseInt(playInc));
+        }
+        return vo;
     }
 
     /** 评论实体列表 → VO（带昵称联查） */
