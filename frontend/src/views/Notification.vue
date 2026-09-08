@@ -154,6 +154,10 @@ onMounted(() => {
 }
 
 .empty {
+  /* 空态也用与 .list 相同的白底圆角卡片，与有通知时的视觉风格保持一致 */
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.05);
   padding: 80px 0;
   text-align: center;
   color: #bbb;
