@@ -17,7 +17,7 @@
              审核仅管理员可见；纵向位置在"观看历史"tab 之后，符合用户指定的排序 -->
         <div class="actions">
           <button class="action-btn recharge" @click="goRecharge">会员充值</button>
-          <button class="action-btn todo" @click="goTodo">待办练习</button>
+          <button class="action-btn todo" @click="goTodo">待办清单</button>
           <button v-if="isAdmin" class="action-btn audit" @click="goAudit">审核</button>
         </div>
       </div>

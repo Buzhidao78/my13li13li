@@ -5,13 +5,15 @@
          遍历父组件传进来的 todos 数组，每个元素渲染一个 TodoItem。
          :key 必须唯一（用 id）：让 Vue 能"认出"每一条，
          增删时只精确操作变了的那条，而不是整列重建（性能 + 状态不丢）。 -->
+    <!-- 关键：内联 handler 用解构 (id, value) 接住子组件 emit 的两个参数，
+         避免误用 $event（Vue 中 $event 默认是 emit 的第一个参数，会把 id 当成 newText） -->
     <TodoItem
       v-for="item in todos"
       :key="item.id"
       :todo="item"
       @toggle="$emit('toggle', item.id)"
       @remove="$emit('remove', item.id)"
-      @edit="$emit('edit', item.id, $event)"
+      @edit="(id, value) => $emit('edit', id, value)"
     />
 
     <!-- ===== 知识点：v-if 条件渲染 =====
