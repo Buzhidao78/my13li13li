@@ -442,9 +442,12 @@ public class VideoServiceImpl implements VideoService {
         }
 
         // 2. 一次性查出所有一级评论下的回复（root_id in 一级id），避免逐条查询
+        //    注意：一级评论自身的 root_id == 自己 id，会被 root_id in (...) 命中，
+        //    因此必须额外加 parent_id <> 0 过滤，否则一级评论会作为"自己的回复"重复出现一次
         List<Long> rootIds = roots.stream().map(VideoComment::getId).collect(Collectors.toList());
         List<VideoComment> replies = commentMapper.selectList(new LambdaQueryWrapper<VideoComment>()
                 .eq(VideoComment::getVideoId, videoId)
+                .ne(VideoComment::getParentId, 0)
                 .in(VideoComment::getRootId, rootIds)
                 .orderByAsc(VideoComment::getCreateTime));
 

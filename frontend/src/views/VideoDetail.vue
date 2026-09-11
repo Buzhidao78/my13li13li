@@ -70,9 +70,9 @@
                   <span class="r-content">{{ r.content }}</span>
                 </div>
               </div>
-              <!-- 正在回复的输入框 -->
+              <!-- 正在回复的输入框（Vue 模板不会在普通属性里插值，placeholder 必须用 : 绑定） -->
               <div v-if="replyingTo === c.id" class="reply-input">
-                <input v-model="replyText" class="reply-field" placeholder="回复 {{ c.nickname }}" maxlength="500" @keyup.enter="submitReply(c)" />
+                <input v-model="replyText" class="reply-field" :placeholder="'回复 ' + c.nickname" maxlength="500" @keyup.enter="submitReply(c)" />
                 <button class="comment-submit small" @click="submitReply(c)">回复</button>
               </div>
             </div>
