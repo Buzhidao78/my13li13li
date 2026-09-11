@@ -17,6 +17,11 @@ export default defineConfig({
       '/upload/': {
         target: 'http://localhost:8080',
         changeOrigin: true
+      },
+      // WebSocket：私信实时推送，/ws 转发到后端（ws:true 启用协议升级）
+      '/ws': {
+        target: 'ws://localhost:8080',
+        ws: true
       }
     }
   }

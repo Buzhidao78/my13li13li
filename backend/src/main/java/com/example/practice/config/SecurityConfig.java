@@ -82,8 +82,15 @@ public class SecurityConfig {
                         // 搜索辅助：热词和记录搜索公开（游客也能搜，只记热词不记历史）；个人历史需登录
                         .requestMatchers("/api/search/hot",
                                 "/api/search/record").permitAll()
-                        // 用户主页公开（游客可看他人主页）；关注/粉丝列表等其余接口默认需登录
+                        // 用户主页公开（游客可看他人主页）
                         .requestMatchers("/api/user/*/profile").permitAll()
+                        // 粉丝/关注列表公开（游客也能看，与主页公开策略一致；登录用户额外返回互关标识）
+                        .requestMatchers("/api/follow/*/followers",
+                                "/api/follow/*/following").permitAll()
+                        // WebSocket 握手端点放行（握手是 HTTP GET，会经过过滤链；
+                        // 真正的鉴权在 JwtHandshakeInterceptor 里做——浏览器 WS API 无法自定义
+                        // Authorization 头，token 只能放 query 参数，JwtAuthenticationFilter 读不到）
+                        .requestMatchers("/ws/**").permitAll()
                         // 上传的视频文件静态资源放行（/upload/**）
                         .requestMatchers("/upload/**").permitAll()
                         // 其他所有 /api/** 接口都必须登录后才能访问

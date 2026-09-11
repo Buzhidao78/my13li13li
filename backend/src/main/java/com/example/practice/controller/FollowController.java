@@ -48,22 +48,24 @@ public class FollowController {
 
     /**
      * 粉丝列表（关注了该用户的人），按关注时间倒序
+     * 接口已放开游客访问（SecurityConfig permitAll），登录用户额外返回 mutual 互关标识
      */
     @GetMapping("/api/follow/{userId}/followers")
     public Result<IPage<UserVO>> followers(@PathVariable Long userId,
                                            @RequestParam(defaultValue = "1") long page,
                                            @RequestParam(defaultValue = "12") long size) {
-        return Result.success(followService.followers(userId, page, size));
+        return Result.success(followService.followers(userId, currentUserIdOrNull(), page, size));
     }
 
     /**
      * 关注列表（该用户关注的人），按关注时间倒序
+     * 接口已放开游客访问（SecurityConfig permitAll），登录用户额外返回 mutual 互关标识
      */
     @GetMapping("/api/follow/{userId}/following")
     public Result<IPage<UserVO>> following(@PathVariable Long userId,
                                            @RequestParam(defaultValue = "1") long page,
                                            @RequestParam(defaultValue = "12") long size) {
-        return Result.success(followService.following(userId, page, size));
+        return Result.success(followService.following(userId, currentUserIdOrNull(), page, size));
     }
 
     /**

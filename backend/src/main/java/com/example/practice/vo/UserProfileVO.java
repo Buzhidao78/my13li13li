@@ -34,4 +34,7 @@ public class UserProfileVO {
 
     /** 当前登录用户是否已关注 TA（未登录为 null/false） */
     private Boolean followed;
+
+    /** 当前登录用户与 TA 是否互相关注（未登录/看自己为 null；互关时私信不受抖音单条限制） */
+    private Boolean mutualFollowed;
 }

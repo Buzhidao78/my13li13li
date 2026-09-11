@@ -80,6 +80,12 @@ public class FollowServiceImpl implements FollowService {
     }
 
     @Override
+    public boolean isMutualFollowed(Long userA, Long userB) {
+        // 互相关注 = A→B 与 B→A 两条关系都存在，两次 selectCount 即可（练习数据量无需优化成一条 SQL）
+        return isFollowed(userA, userB) && isFollowed(userB, userA);
+    }
+
+    @Override
     public UserProfileVO profile(Long targetUserId, Long currentUserId) {
         User user = userMapper.selectById(targetUserId);
         if (user == null) {
@@ -102,39 +108,49 @@ public class FollowServiceImpl implements FollowService {
                 .eq(UserFollow::getFollowerId, targetUserId)));
         // 当前登录用户是否已关注（未登录不查，返回 null）
         vo.setFollowed(currentUserId == null ? null : isFollowed(currentUserId, targetUserId));
+        // 是否互相关注（仅登录且看别人时有意义，私信抖音规则豁免也依赖这个判定）
+        vo.setMutualFollowed(currentUserId == null || currentUserId.equals(targetUserId)
+                ? null : isMutualFollowed(currentUserId, targetUserId));
         return vo;
     }
 
     @Override
-    public IPage<UserVO> followers(Long userId, long page, long size) {
+    public IPage<UserVO> followers(Long userId, Long currentUserId, long page, long size) {
         // 粉丝列表：查 user_follow 里 following_id = userId 的记录（关注了 TA 的人）
         Page<UserFollow> p = followMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<UserFollow>()
                         .eq(UserFollow::getFollowingId, userId)
                         .orderByDesc(UserFollow::getCreateTime));
-        return p.convert(f -> toUserVO(userMapper.selectById(f.getFollowerId())));
+        return p.convert(f -> toUserVO(userMapper.selectById(f.getFollowerId()), currentUserId));
     }
 
     @Override
-    public IPage<UserVO> following(Long userId, long page, long size) {
+    public IPage<UserVO> following(Long userId, Long currentUserId, long page, long size) {
         // 关注列表：查 user_follow 里 follower_id = userId 的记录（TA 关注的人）
         Page<UserFollow> p = followMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<UserFollow>()
                         .eq(UserFollow::getFollowerId, userId)
                         .orderByDesc(UserFollow::getCreateTime));
-        return p.convert(f -> toUserVO(userMapper.selectById(f.getFollowingId())));
+        return p.convert(f -> toUserVO(userMapper.selectById(f.getFollowingId()), currentUserId));
     }
 
-    /** 用户实体 → VO（只暴露非敏感字段） */
-    private UserVO toUserVO(User user) {
+    /**
+     * 用户实体 → VO（粉丝/关注列表场景）
+     * 注意：这里不再 set phone——粉丝/关注列表是"半公开"数据（游客可访问），
+     * 任何人都可通过列表拿到他人手机号属于敏感信息泄露（2026-09-11 修补）
+     * @param currentUserId 当前登录用户，未登录为 null（null 时 mutual 不填充）
+     */
+    private UserVO toUserVO(User user, Long currentUserId) {
         UserVO vo = new UserVO();
         vo.setId(user.getId());
-        vo.setUsername(user.getUsername());
         vo.setNickname(user.getNickname());
         vo.setAvatar(user.getAvatar());
-        vo.setPhone(user.getPhone());
         vo.setGender(user.getGender());
         vo.setSign(user.getSign());
+        // 互相关注标识：仅登录用户看别人时填充；每项一次双向判定（N+1，练习数据量可接受）
+        if (currentUserId != null && !currentUserId.equals(user.getId())) {
+            vo.setMutual(isMutualFollowed(currentUserId, user.getId()));
+        }
         return vo;
     }
 }

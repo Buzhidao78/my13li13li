@@ -61,6 +61,13 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    // 私信消息中心：需登录；支持 /message?userId=xx 直接打开与某人的聊天窗
+    path: '/message',
+    name: 'Message',
+    component: () => import('../views/Message.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     // 管理员审核台：需登录且 role=1
     path: '/admin/audit',
     name: 'Audit',

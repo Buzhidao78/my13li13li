@@ -14,6 +14,8 @@ TRUNCATE TABLE video_coin;
 TRUNCATE TABLE user_follow;
 TRUNCATE TABLE user_notification;
 TRUNCATE TABLE video;
+TRUNCATE TABLE dm_conversation;
+TRUNCATE TABLE dm_message;
 
 -- 2. 测试用户（作者们；登录测试统一用手机号验证码，密码留空）
 --    INSERT IGNORE：用户已存在（重复执行脚本）时跳过，不报错
@@ -22,16 +24,18 @@ INSERT IGNORE INTO user (username, password, phone, nickname, gender, status, ro
 ('admin', '$2a$10$MuL39fiFGAI.Zp44Lhw2neSdqG6VG9oBtQsB7E.F3kBfLZYtCbe16', '13800000001', '管理员', 0, 0, 1);
 
 INSERT IGNORE INTO user (phone, nickname, gender, status, role) VALUES
+('13800000002', '用户0002', 0, 0, 0),
 ('13800000003', '用户0003', 0, 0, 0),
 ('13800000004', '用户0004', 0, 0, 0),
 ('13800000005', '用户0005', 0, 0, 0);
 
 -- 3. 规范测试视频（12 条）
---    作者分布：13800000002(用户0002,id=9)、用户0003、用户0004、用户0005
+--    作者分布：用户0002(13800000002)、用户0003、用户0004、用户0005
 --    状态分布：9 条已发布(1)、2 条待审核(0)、1 条已驳回(2)
 --    计数分布：热门/普通/新发布区分明显，方便测试推荐排序
 --    video_url 复用模块1上传的真实文件（假视频，播放器不可播但 URL 有效）
-SET @v9 = 9;
+--    注意：id 一律按手机号动态解析，绝不能写死数字（库重建后自增 id 会漂移）
+SET @v9 = (SELECT id FROM user WHERE phone = '13800000002');
 SET @u3 = (SELECT id FROM user WHERE phone = '13800000003');
 SET @u4 = (SELECT id FROM user WHERE phone = '13800000004');
 SET @u5 = (SELECT id FROM user WHERE phone = '13800000005');
@@ -98,3 +102,44 @@ INSERT INTO user_notification (user_id, actor_id, type, video_id, content, is_re
 (@v9, @u5, 2, 1, '用户0005 收藏了你的视频《我的第一个视频》', 1, NOW() - INTERVAL 3 HOUR),
 (@v9, @u4, 3, 1, '用户0004 给你投了币：《我的第一个视频》', 0, NOW() - INTERVAL 2 HOUR),
 (@v9, @u5, 6, NULL, '用户0005 关注了你', 0, NOW() - INTERVAL 1 HOUR);
+
+-- 10. 私信会话与消息（模块：私信 DM）
+--     设计三对会话，覆盖三种验收场景：
+--     ① 9↔0003 互相关注 → 聊天自由来回，9 侧有 2 条未读（验收红点）
+--     ② 9↔0004 互相关注 → 9 侧有 1 条未读（验收红点合并）
+--     ③ 9↔0005 非互关（0005→9 单向关注）→ 9 已发一条未获回复
+--        （验收抖音规则：9 再发被拒；0005 回复后 9 可再发）
+-- 注：last_content 截断 100 字；unread_count 是"这一行归属者"视角的未读数
+INSERT INTO dm_message (sender_id, receiver_id, content, create_time) VALUES
+-- 会话① 9 ↔ 0003（互关）
+(@v9, @u3, '在吗？红烧肉教程第3步那个小火是多久', NOW() - INTERVAL 5 HOUR),
+(@u3, @v9, '在的！小火慢炖 40 分钟，中途别揭盖', NOW() - INTERVAL 4 HOUR),
+(@v9, @u3, '收到，我周末试试，失败了再来问你', NOW() - INTERVAL 3 HOUR),
+(@u3, @v9, '哈哈好，期待你的成品', NOW() - INTERVAL 50 MINUTE),
+(@u3, @v9, '对了，上次的截图能发我看看吗', NOW() - INTERVAL 49 MINUTE),
+-- 会话② 9 ↔ 0004（互关）
+(@u4, @v9, '你那个装机视频里用的什么机箱？', NOW() - INTERVAL 2 DAY),
+(@v9, @u4, '联力的包豪斯，走线很方便', NOW() - INTERVAL 2 DAY + INTERVAL 1 HOUR),
+(@u4, @v9, '谢啦，我也想入一个', NOW() - INTERVAL 30 MINUTE),
+-- 会话③ 9 ↔ 0005（非互关，抖音规则验收）
+(@v9, @u5, '你好，看了你爬山的 Vlog 想交流一下拍摄设备', NOW() - INTERVAL 8 HOUR);
+
+INSERT INTO dm_conversation (user_id, peer_id, last_message_id, last_content, last_time, unread_count, create_time, update_time) VALUES
+-- 会话① 9 的行：对方(0003)最后一条是"对了…截图"，9 未读 2 条
+(@v9, @u3, (SELECT id FROM dm_message WHERE content = '对了，上次的截图能发我看看吗'),
+ '对了，上次的截图能发我看看吗', NOW() - INTERVAL 49 MINUTE, 2, NOW() - INTERVAL 5 HOUR, NOW() - INTERVAL 49 MINUTE),
+-- 会话① 0003 的行：9 的最后一条已读
+(@u3, @v9, (SELECT id FROM dm_message WHERE content = '收到，我周末试试，失败了再来问你'),
+ '收到，我周末试试，失败了再来问你', NOW() - INTERVAL 3 HOUR, 0, NOW() - INTERVAL 5 HOUR, NOW() - INTERVAL 3 HOUR),
+-- 会话② 9 的行：0004 最后一条未读
+(@v9, @u4, (SELECT id FROM dm_message WHERE content = '谢啦，我也想入一个'),
+ '谢啦，我也想入一个', NOW() - INTERVAL 30 MINUTE, 1, NOW() - INTERVAL 2 DAY, NOW() - INTERVAL 30 MINUTE),
+-- 会话② 0004 的行
+(@u4, @v9, (SELECT id FROM dm_message WHERE content = '联力的包豪斯，走线很方便'),
+ '联力的包豪斯，走线很方便', NOW() - INTERVAL 2 DAY + INTERVAL 1 HOUR, 0, NOW() - INTERVAL 2 DAY, NOW() - INTERVAL 2 DAY + INTERVAL 1 HOUR),
+-- 会话③ 9 的行：我发的一条已读（0005 没回，抖音规则限制 9 再发）
+(@v9, @u5, (SELECT id FROM dm_message WHERE content LIKE '你好，看了你爬山%'),
+ '你好，看了你爬山的 Vlog 想交流一下拍摄设备', NOW() - INTERVAL 8 HOUR, 0, NOW() - INTERVAL 8 HOUR, NOW() - INTERVAL 8 HOUR),
+-- 会话③ 0005 的行：未读 1
+(@u5, @v9, (SELECT id FROM dm_message WHERE content LIKE '你好，看了你爬山%'),
+ '你好，看了你爬山的 Vlog 想交流一下拍摄设备', NOW() - INTERVAL 8 HOUR, 1, NOW() - INTERVAL 8 HOUR, NOW() - INTERVAL 8 HOUR);

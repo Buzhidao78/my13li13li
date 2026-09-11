@@ -146,3 +146,32 @@ CREATE TABLE IF NOT EXISTS user_notification (
     create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '通知时间',
     INDEX idx_user_read (user_id, is_read)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '站内通知';
+
+-- ============ 私信会话表（模块：私信 DM） ============
+-- 设计说明：每个用户对每个对方存"一行自己的会话"，各存各的未读数与最后一条摘要。
+-- 这样会话列表只需单表 WHERE user_id=我 ORDER BY update_time DESC，未读总数 SUM(unread_count)，
+-- 无需 join/聚合；代价是发一条消息要写两行（写放大），练习项目完全可接受。
+CREATE TABLE IF NOT EXISTS dm_conversation (
+    id              BIGINT       AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    user_id         BIGINT       NOT NULL COMMENT '会话归属者（这一行是"谁的"会话）',
+    peer_id         BIGINT       NOT NULL COMMENT '对方用户ID',
+    last_message_id BIGINT                DEFAULT NULL COMMENT '最后一条消息ID',
+    last_content    VARCHAR(100) NOT NULL DEFAULT '' COMMENT '最后一条消息摘要（截断100字）',
+    last_time       DATETIME     NOT NULL COMMENT '最后一条消息时间',
+    unread_count    INT          NOT NULL DEFAULT 0 COMMENT '我未读的对方消息数',
+    create_time     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '会话创建时间',
+    update_time     DATETIME     NOT NULL COMMENT '最后活跃时间（会话列表排序用，发消息时更新）',
+    UNIQUE KEY uk_user_peer (user_id, peer_id) COMMENT '同一用户对同一对方只有一行会话',
+    INDEX idx_user_time (user_id, update_time) COMMENT '会话列表查询索引'
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '私信会话';
+
+-- ============ 私信消息表 ============
+CREATE TABLE IF NOT EXISTS dm_message (
+    id          BIGINT       AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    sender_id   BIGINT       NOT NULL COMMENT '发送者',
+    receiver_id BIGINT       NOT NULL COMMENT '接收者',
+    content     VARCHAR(500) NOT NULL COMMENT '消息内容（纯文本，前端文本插值渲染防XSS）',
+    create_time DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+    INDEX idx_sender (sender_id, receiver_id, id) COMMENT '查"我发给谁的消息"（含抖音规则判定）',
+    INDEX idx_receiver (receiver_id, sender_id, id) COMMENT '查"谁发给我的消息"'
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '私信消息';

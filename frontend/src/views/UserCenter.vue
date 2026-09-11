@@ -13,16 +13,17 @@
             <span class="m-meta">剩 {{ memberInfo.remainDays }} 天 · 到期 {{ formatDate(memberInfo.memberExpire) }}</span>
           </div>
         </div>
-        <!-- 右侧动作区：纵向排列"会员充值 / 待办练习 / 审核"
+        <!-- 右侧动作区：纵向排列"会员充值 / 我的消息 / 待办练习 / 审核"
              审核仅管理员可见；纵向位置在"观看历史"tab 之后，符合用户指定的排序 -->
         <div class="actions">
           <button class="action-btn recharge" @click="goRecharge">会员充值</button>
+          <button class="action-btn message" @click="goMessage">我的消息</button>
           <button class="action-btn todo" @click="goTodo">待办清单</button>
           <button v-if="isAdmin" class="action-btn audit" @click="goAudit">审核</button>
         </div>
       </div>
 
-      <!-- 三个 tab：我的视频 / 我的收藏 / 观看历史 -->
+      <!-- 五个 tab：我的视频 / 我的收藏 / 观看历史 / 我的关注 / 我的粉丝 -->
       <div class="tabs">
         <span
           v-for="t in tabs"
@@ -35,7 +36,27 @@
         </span>
       </div>
 
-      <!-- 列表区 -->
+      <!-- 用户列表(我的关注/我的粉丝):渲染的是人,不是视频 -->
+      <template v-if="isUserTab">
+        <div v-if="list.length === 0" class="empty">{{ emptyText }}</div>
+        <div v-else class="user-list">
+          <div v-for="u in list" :key="u.id" class="user-row" @click="goUser(u.id)">
+            <span class="u-avatar">{{ (u.nickname || '用').charAt(0) }}</span>
+            <div class="u-main">
+              <div class="u-name">
+                {{ u.nickname || `用户${u.id}` }}
+                <!-- 互相关注标识:后端 mutual 字段,游客视角为 null 不渲染 -->
+                <span v-if="u.mutual" class="mutual-tag">互相关注</span>
+              </div>
+              <div class="u-meta">{{ activeTab === 'following' ? '已关注' : '关注了我' }}</div>
+            </div>
+            <span class="u-go">主页 ›</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- 视频列表区(原有三个 tab) -->
+      <template v-else>
       <div v-if="list.length === 0" class="empty">{{ emptyText }}</div>
       <div v-else class="video-list">
         <div v-for="v in list" :key="v.id" class="video-row" @click="goDetail(v.id)">
@@ -59,12 +80,13 @@
         </div>
       </div>
 
-      <!-- 分页 -->
+      <!-- 分页(视频 tab 与用户 tab 共用) -->
       <div v-if="totalPages > 1" class="pagination">
         <button class="page-btn" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
         <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
         <button class="page-btn" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
       </div>
+      </template>
     </div>
   </div>
 </template>
@@ -75,13 +97,16 @@ import { useRouter } from 'vue-router'
 import { userStore } from '../store/user'
 import { getMyVideos, getFavorites, getHistory } from '../api/video'
 import { getMemberInfo } from '../api/order'
+import { getFollowers, getFollowing } from '../api/follow'
 
 const router = useRouter()
 
 const tabs = [
   { key: 'videos', label: '我的视频' },
   { key: 'favorites', label: '我的收藏' },
-  { key: 'history', label: '观看历史' }
+  { key: 'history', label: '观看历史' },
+  { key: 'following', label: '我的关注' },
+  { key: 'followers', label: '我的粉丝' }
 ]
 
 const activeTab = ref('videos')
@@ -91,7 +116,10 @@ const total = ref(0)
 const pageSize = 8
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
-const emptyText = computed(() => ({ videos: '还没有投稿，去首页点"投稿"上传吧', favorites: '还没有收藏，看到喜欢的视频点"收藏"', history: '还没有观看记录' }[activeTab.value]))
+const emptyText = computed(() => ({ videos: '还没有投稿，去首页点"投稿"上传吧', favorites: '还没有收藏，看到喜欢的视频点"收藏"', history: '还没有观看记录', following: '还没有关注任何人', followers: '还没有粉丝' }[activeTab.value]))
+
+/** 是否为用户列表 tab(我的关注/我的粉丝):控制列表渲染成"人"还是"视频" */
+const isUserTab = computed(() => activeTab.value === 'following' || activeTab.value === 'followers')
 
 const firstChar = computed(() =>
   userStore.user?.nickname ? userStore.user.nickname.charAt(0) : '用'
@@ -108,6 +136,16 @@ function goRecharge() {
 /** 跳转到待办练习页（无需登录） */
 function goTodo() {
   router.push('/todo')
+}
+
+/** 跳转到私信消息中心(右侧动作区的"我的消息"按钮) */
+function goMessage() {
+  router.push('/message')
+}
+
+/** 跳转到某个用户的主页(关注/粉丝列表点击) */
+function goUser(id) {
+  router.push(`/user/${id}`)
 }
 
 /** 跳转到管理员审核台 */
@@ -145,10 +183,18 @@ async function loadMember() {
 
 async function loadPage() {
   try {
-    const api = { videos: getMyVideos, favorites: getFavorites, history: getHistory }[activeTab.value]
-    const res = await api({ page: page.value, size: pageSize })
-    list.value = res.data.records
-    total.value = res.data.total
+    // 关注类接口签名不同:GET /api/follow/{userId}/following|followers 要传"我"的 id
+    if (isUserTab.value) {
+      const api = activeTab.value === 'following' ? getFollowing : getFollowers
+      const res = await api(userStore.user?.id, { page: page.value, size: pageSize })
+      list.value = res.data.records
+      total.value = res.data.total
+    } else {
+      const api = { videos: getMyVideos, favorites: getFavorites, history: getHistory }[activeTab.value]
+      const res = await api({ page: page.value, size: pageSize })
+      list.value = res.data.records
+      total.value = res.data.total
+    }
   } catch {
     // 加载失败保留已有数据（翻页失败不把已展示内容清空；首次加载失败则是空列表，页面有空态兜底）
   }
@@ -320,6 +366,83 @@ loadMember()
 .action-btn.audit:hover {
   background: #f59e0b;
   color: #fff;
+}
+
+.action-btn.message {
+  color: #6ec46e;
+  border-color: #6ec46e;
+}
+.action-btn.message:hover {
+  background: #6ec46e;
+  color: #fff;
+}
+
+/* ===== 用户列表(我的关注/我的粉丝) ===== */
+.user-list {
+  padding-top: 6px;
+}
+
+.user-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 4px;
+  border-bottom: 1px solid #f7f7f9;
+  cursor: pointer;
+}
+
+.user-row:hover .u-name {
+  color: #fb7299;
+}
+
+.u-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #fb7299;
+  color: #fff;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.u-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.u-name {
+  font-size: 14px;
+  font-weight: bold;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 互相关注标识 */
+.mutual-tag {
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: #fff1f5;
+  color: #fb7299;
+  font-size: 11px;
+  font-weight: normal;
+}
+
+.u-meta {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+}
+
+.u-go {
+  font-size: 12px;
+  color: #bbb;
+  flex-shrink: 0;
 }
 
 .tabs {

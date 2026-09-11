@@ -56,7 +56,16 @@
         </div>
       </div>
 
-      <!-- 消息铃铛：登录后显示，未读数红点；未登录点击弹登录框 -->
+      <!-- 私信信封:登录后显示,红点 = 私信未读总数(messageStore.dmUnread) -->
+      <div v-if="userStore.user" class="bell" @click="goMessage">
+        <!-- 信封图标(内联 SVG) -->
+        <svg viewBox="0 0 24 24" width="21" height="21" fill="currentColor">
+          <path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z" />
+        </svg>
+        <span v-if="messageStore.dmUnread > 0" class="badge">{{ messageStore.dmUnread > 99 ? '99+' : messageStore.dmUnread }}</span>
+      </div>
+
+      <!-- 消息铃铛:登录后显示,未读数红点;未登录点击弹登录框 -->
       <div v-if="userStore.user" class="bell" @click="goNotification">
         <!-- 铃铛图标（内联 SVG） -->
         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
@@ -87,10 +96,12 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { userStore, clearAuth } from '../store/user'
+import { messageStore } from '../store/message'
 import { getUnreadCount } from '../api/notification'
+import { getDmUnreadTotal } from '../api/dm'
 import { getHotSearch, getSearchHistory, clearSearchHistory } from '../api/search'
 
 // 频道导航在重构后已无假链接：剩余均为真实页面入口。
@@ -193,6 +204,11 @@ function goNotification() {
   router.push('/notification')
 }
 
+/** 跳转到私信消息中心(信封图标;登录后入口才显示,无需再弹登录框) */
+function goMessage() {
+  router.push('/message')
+}
+
 /** 拉取未读通知数（登录后显示红点） */
 async function loadUnread() {
   if (!userStore.user) return
@@ -207,6 +223,37 @@ async function loadUnread() {
 // 登录状态变化时刷新未读数（登录/退出都触发）
 watch(() => userStore.user, loadUnread)
 onMounted(loadUnread)
+
+/** 拉取私信未读总数(写入全局 messageStore,信封红点读它) */
+async function loadDmUnread() {
+  if (!userStore.user) {
+    messageStore.dmUnread = 0
+    return
+  }
+  try {
+    const res = await getDmUnreadTotal()
+    messageStore.dmUnread = res.data || 0
+  } catch {
+    // 拉取失败保留旧值,等下一轮轮询自愈
+  }
+}
+
+watch(() => userStore.user, loadDmUnread)
+onMounted(loadDmUnread)
+
+// ===== 30s 轮询:两个红点(通知 + 私信)自动更新 =====
+// 说明:不做全局常驻 WebSocket(连接管理复杂,练习项目从简);
+// Message.vue 页面内的实时性由页面自己的 WS 连接负责,页外红点靠这里轮询兜底
+let pollTimer = null
+onMounted(() => {
+  pollTimer = setInterval(() => {
+    loadUnread()
+    loadDmUnread()
+  }, 30000)
+})
+onBeforeUnmount(() => {
+  if (pollTimer) clearInterval(pollTimer)
+})
 
 // 昵称第一个字，用作默认头像文字
 const firstChar = computed(() =>
@@ -239,6 +286,7 @@ function onSearch() {
 function handleLogout() {
   clearAuth()
   unread.value = 0
+  messageStore.dmUnread = 0
   // 已在首页则无需重复导航
   if (router.currentRoute.value.path !== '/') {
     router.push('/')

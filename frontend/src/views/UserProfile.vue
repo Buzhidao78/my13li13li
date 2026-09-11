@@ -9,7 +9,11 @@
         <img v-if="profile.avatar" :src="profile.avatar" class="avatar" alt="头像" />
         <span v-else class="avatar avatar-text">{{ firstChar }}</span>
         <div class="info">
-          <div class="nickname">{{ profile.nickname }}</div>
+          <div class="nickname">
+            {{ profile.nickname }}
+            <!-- 互相关注标识:后端 mutualFollowed 字段(游客/非互关时为 false 不渲染) -->
+            <span v-if="profile.mutualFollowed" class="mutual-tag">互相关注</span>
+          </div>
           <div v-if="profile.sign" class="sign">{{ profile.sign }}</div>
           <div class="stats">
             <span><b>{{ profile.videoCount || 0 }}</b> 视频</span>
@@ -17,10 +21,13 @@
             <span @click="switchTab('following')"><b>{{ profile.followingCount || 0 }}</b> 关注</span>
           </div>
         </div>
-        <!-- 关注按钮：未登录提示登录；自己主页不显示 -->
-        <button v-if="canFollow" class="follow-btn" :class="{ followed }" @click="onFollow">
-          {{ followed ? '已关注' : '+ 关注' }}
-        </button>
+        <!-- 动作按钮:关注 + 发私信(都不是自己的主页才显示) -->
+        <div class="btn-area">
+          <button v-if="canFollow" class="follow-btn" :class="{ followed }" @click="onFollow">
+            {{ followed ? '已关注' : '+ 关注' }}
+          </button>
+          <button v-if="canFollow" class="dm-btn" @click="goMessage">发私信</button>
+        </div>
       </div>
 
       <!-- Tab：视频 / 粉丝 / 关注 -->
@@ -36,13 +43,14 @@
         <div v-if="videos.length === 0" class="empty">TA 还没有发布视频</div>
       </div>
 
-      <!-- 粉丝/关注 Tab：用户列表 -->
+      <!-- 粉丝/关注 Tab：用户列表（含互相关注标识） -->
       <div v-else class="user-list">
         <div v-if="userList.length === 0" class="empty">还没有人</div>
         <div v-for="u in userList" :key="u.id" class="user-item" @click="goProfile(u.id)">
           <img v-if="u.avatar" :src="u.avatar" class="u-avatar" alt="头像" />
           <span v-else class="u-avatar avatar-text">{{ (u.nickname || '用').charAt(0) }}</span>
           <span class="u-nickname">{{ u.nickname || '匿名用户' }}</span>
+          <span v-if="u.mutual" class="mutual-tag">互相关注</span>
         </div>
       </div>
     </div>
@@ -117,7 +125,22 @@ async function onFollow() {
     followed.value = res.data
     // 本地同步粉丝数（取消关注 -1，新关注 +1）
     profile.value.followerCount = Math.max(0, (profile.value.followerCount || 0) + (followed.value ? 1 : -1))
+    // 关注关系变了,重拉主页刷新互关标识(对方是否也关注我)
+    refreshMutual()
   } catch { /* 失败保持现状 */ }
+}
+
+/** 只刷新互关标识,不动其他展示数据 */
+async function refreshMutual() {
+  try {
+    const res = await getUserProfile(userId.value)
+    if (res.data) profile.value.mutualFollowed = !!res.data.mutualFollowed
+  } catch { /* 忽略 */ }
+}
+
+/** 跳到私信消息中心,并直开与 TA 的聊天窗(未登录时路由守卫会先拦登录) */
+function goMessage() {
+  router.push(`/message?userId=${userId.value}`)
 }
 
 function goDetail(id) {
@@ -241,6 +264,44 @@ onMounted(load)
   background: #fff;
   color: #999;
   border-color: #ddd;
+}
+
+/* 动作按钮区:关注 + 发私信并排 */
+.btn-area {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* 发私信按钮:描边蓝,与关注按钮(粉色实底)区分 */
+.dm-btn {
+  padding: 8px 22px;
+  border: 1px solid #58b7ff;
+  border-radius: 20px;
+  background: #fff;
+  color: #58b7ff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dm-btn:hover {
+  background: #58b7ff;
+  color: #fff;
+}
+
+/* 互相关注标识 */
+.mutual-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: #fff1f5;
+  color: #fb7299;
+  font-size: 11px;
+  font-weight: normal;
+  vertical-align: middle;
 }
 
 /* Tab */
