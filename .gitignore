@@ -20,6 +20,12 @@ Thumbs.db
 
 # 运行时上传文件（视频/封面）
 backend/upload/
+upload/
+
+# Docker 镜像导出产物（体积巨大，仅本地/传输用，禁止入库）
+video-community-images.tar
+video-community-images.tar.gz
+.tmp-*
 
 # Redis 快照与联调残留
 *.rdb

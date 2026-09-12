@@ -7,22 +7,23 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 连接串/账号/密码可通过环境变量覆盖（生产环境务必设置 DB_PASSWORD，勿用默认值）
-    url: jdbc:mysql://localhost:3306/practice2?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    # DB_HOST/DB_PORT：Docker 编排时注入服务名 mysql，本地开发默认 localhost
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/video_community?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
-  # Redis 配置（默认本机 6379，无需密码）
+  # Redis 配置（默认本机 6379，无需密码；Docker 编排时注入服务名 redis）
   data:
     redis:
-      host: localhost
+      host: ${REDIS_HOST:localhost}
       port: 6379
       database: 0
 
-  # RabbitMQ 配置（默认本机 5672，guest/guest 仅限本机访问）
+  # RabbitMQ 配置（默认本机 5672，guest/guest 仅限本机访问；Docker 编排时注入服务名 rabbitmq）
   rabbitmq:
-    host: localhost
+    host: ${RABBITMQ_HOST:localhost}
     port: 5672
-    username: guest
-    password: guest
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
     # 生产者 confirm：消息投递到交换机后，RabbitMQ 会回调确认结果（可靠投递的关键）
     publisher-confirm-type: correlated
     # 生产者 return：消息路由不到任何队列时，回调通知（配合 confirm 判断消息是否真正入队）
@@ -43,7 +44,8 @@ order:
 file:
   # 上传文件存储根目录：相对路径，相对后端启动目录（backend/ 下会生成 upload/ 文件夹）
   # 目录里的文件通过 /upload/** 静态映射对外访问（见 config/WebConfig.java）
-  upload-dir: ./upload
+  # Docker 部署时通过环境变量 FILE_UPLOAD_DIR 指向持久化卷 /app/upload
+  upload-dir: ${FILE_UPLOAD_DIR:./upload}
 
 # JWT 配置：secret 要足够长（>=32字节）
 # 默认值仅供本地开发；生产环境必须通过环境变量 JWT_SECRET 传入随机字符串

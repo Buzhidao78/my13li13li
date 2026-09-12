@@ -132,7 +132,7 @@ async function loadPage(replace) {
   try {
     const params = { page: page.value, size: 12 }
     const res = followMode.value
-      ? await getFeed(params)
+      ? await getFeed({ ...params, sort: sort.value })
       : await getVideoList({ ...params, category: category.value, sort: sort.value })
     const records = res.data.records
     videos.value = replace ? records : [...videos.value, ...records]

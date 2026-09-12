@@ -77,8 +77,9 @@ public class VideoController {
      */
     @GetMapping("/feed")
     public Result<IPage<VideoVO>> feed(@RequestParam(defaultValue = "1") long page,
-                                       @RequestParam(defaultValue = "12") long size) {
-        return Result.success(videoService.feed(currentUserId(), page, size));
+                                       @RequestParam(defaultValue = "12") long size,
+                                       @RequestParam(defaultValue = "new") String sort) {
+        return Result.success(videoService.feed(currentUserId(), page, size, sort));
     }
 
     /**
@@ -110,13 +111,17 @@ public class VideoController {
     }
 
     /**
-     * 管理员分页查询全站"待审核"视频（需登录且 role=1）
+     * 管理员分页查询审核列表（需登录且 role=1）
      * 用 /pending 而不是 /audit/pending，避免与 POST /{id}/audit 路径冲突
+     * status：0=待审核（默认）；-1=已审核（通过+驳回合并）；其它数字精确匹配对应状态
+     * keyword：标题 或 作者昵称/用户名 模糊搜索（可选）
      */
     @GetMapping("/pending")
     public Result<IPage<VideoVO>> pending(@RequestParam(defaultValue = "1") long page,
-                                          @RequestParam(defaultValue = "20") long size) {
-        return Result.success(videoService.listPending(page, size, currentUserId()));
+                                          @RequestParam(defaultValue = "20") long size,
+                                          @RequestParam(required = false) Integer status,
+                                          @RequestParam(required = false) String keyword) {
+        return Result.success(videoService.listPending(page, size, status, keyword, currentUserId()));
     }
 
     /**
@@ -145,6 +150,15 @@ public class VideoController {
     @DeleteMapping("/{id}")
     public Result<Void> deleteVideo(@PathVariable Long id) {
         videoService.deleteVideo(id, currentUserId());
+        return Result.success();
+    }
+
+    /**
+     * 重新上架（作者本人或管理员）：已下架(3) -> 已发布(1)，前台恢复展示
+     */
+    @PostMapping("/{id}/republish")
+    public Result<Void> republish(@PathVariable Long id) {
+        videoService.republish(id, currentUserId());
         return Result.success();
     }
 

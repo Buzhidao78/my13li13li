@@ -9,7 +9,10 @@
         <span class="nav-link" :class="{ active: isHome }" @click="goHome">首页</span>
         <!-- 投稿入口：上传视频（需登录，登录后自动回跳）；进入投稿页时粉色高亮 -->
         <span class="nav-link nav-upload" :class="{ active: isUpload }" @click="goUpload">投稿</span>
-        <!-- 会员充值 / 审核台 / 待办练习 三个入口已迁至个人中心卡面右侧（见 views/UserCenter.vue 的 .actions） -->
+        <!-- 审核台入口：仅管理员可见，紧跟"投稿"之后；括号内为待审核视频数 -->
+        <span v-if="userStore.user?.role === 1" class="nav-link" :class="{ active: isAudit }" @click="goAudit">
+          审核台<template v-if="auditPending > 0">（{{ auditPending }}）</template>
+        </span>
       </nav>
     </div>
 
@@ -103,6 +106,7 @@ import { messageStore } from '../store/message'
 import { getUnreadCount } from '../api/notification'
 import { getDmUnreadTotal } from '../api/dm'
 import { getHotSearch, getSearchHistory, clearSearchHistory } from '../api/search'
+import { getPendingVideos } from '../api/video'
 
 // 频道导航在重构后已无假链接：剩余均为真实页面入口。
 // （原"直播/番剧/游戏/推荐"等假频道已移除，避免点击无响应的误导交互）
@@ -116,6 +120,12 @@ const isHome = computed(() => router.currentRoute.value.path === '/')
 
 /** 是否在投稿页：控制"投稿"链接的高亮态 */
 const isUpload = computed(() => router.currentRoute.value.path === '/upload')
+
+/** 是否在审核台：控制"审核"链接的高亮态 */
+const isAudit = computed(() => router.currentRoute.value.path === '/admin/audit')
+
+/** 待审核视频数（审核入口右上角红点，仅管理员） */
+const auditPending = ref(0)
 
 // ===== 搜索下拉浮层 =====
 const searchDropdownOpen = ref(false)
@@ -195,6 +205,11 @@ function goUpload() {
   router.push('/upload')
 }
 
+/** 跳转到审核台（入口仅管理员可见，路由守卫还会二次校验角色） */
+function goAudit() {
+  router.push('/admin/audit')
+}
+
 /** 跳转到消息通知中心（未登录点击则弹登录框） */
 function goNotification() {
   if (!userStore.user) {
@@ -207,6 +222,20 @@ function goNotification() {
 /** 跳转到私信消息中心(信封图标;登录后入口才显示,无需再弹登录框) */
 function goMessage() {
   router.push('/message')
+}
+
+/** 拉取待审核视频数（仅管理员；size=1 只取 total，用于审核入口红点） */
+async function loadAuditPending() {
+  if (userStore.user?.role !== 1) {
+    auditPending.value = 0
+    return
+  }
+  try {
+    const res = await getPendingVideos({ page: 1, size: 1, status: 0 })
+    auditPending.value = res.data.total || 0
+  } catch {
+    auditPending.value = 0
+  }
 }
 
 /** 拉取未读通知数（登录后显示红点） */
@@ -222,7 +251,9 @@ async function loadUnread() {
 
 // 登录状态变化时刷新未读数（登录/退出都触发）
 watch(() => userStore.user, loadUnread)
+watch(() => userStore.user, loadAuditPending)
 onMounted(loadUnread)
+onMounted(loadAuditPending)
 
 /** 拉取私信未读总数(写入全局 messageStore,信封红点读它) */
 async function loadDmUnread() {
@@ -249,6 +280,7 @@ onMounted(() => {
   pollTimer = setInterval(() => {
     loadUnread()
     loadDmUnread()
+    loadAuditPending()
   }, 30000)
 })
 onBeforeUnmount(() => {
@@ -287,6 +319,7 @@ function handleLogout() {
   clearAuth()
   unread.value = 0
   messageStore.dmUnread = 0
+  auditPending.value = 0
   // 已在首页则无需重复导航
   if (router.currentRoute.value.path !== '/') {
     router.push('/')

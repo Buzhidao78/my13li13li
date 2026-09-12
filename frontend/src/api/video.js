@@ -87,3 +87,23 @@ export function auditVideo(id, status) {
 export function getPendingVideos(params) {
   return request.get('/video/pending', { params })
 }
+
+/** 下架视频（作者本人或管理员）：已发布 -> 已下架，前台不再展示 */
+export function offlineVideo(id) {
+  return request.post(`/video/${id}/offline`)
+}
+
+/** 重新上架（作者本人或管理员）：已下架 -> 已发布，前台恢复展示 */
+export function republishVideo(id) {
+  return request.post(`/video/${id}/republish`)
+}
+
+/** 删除视频（作者本人或管理员）：硬删除并级联清理互动数据与文件，不可恢复 */
+export function deleteVideo(id) {
+  return request.delete(`/video/${id}`)
+}
+
+/** 删除单条观看历史（个人中心"观看历史"用） */
+export function deleteHistory(videoId) {
+  return request.delete(`/user/me/history/${videoId}`)
+}

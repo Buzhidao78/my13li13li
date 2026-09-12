@@ -1,11 +1,28 @@
 <template>
   <div class="audit-page">
     <div class="audit-card">
-      <h1 class="page-title">视频审核台</h1>
-      <p class="page-tip">按提交时间正序排列，最早提交的优先审。每页 20 条。</p>
+      <!-- 卡片头部：标题在左，搜索栏固定在右上角 -->
+      <div class="card-head">
+        <div class="head-left">
+          <h1 class="page-title">视频审核台</h1>
+          <p class="page-tip">按提交时间正序排列，最早提交的优先审。每页 20 条。</p>
+        </div>
+        <!-- 搜索框：标题 / 作者昵称 / 用户名 模糊搜索；搜索后自动清空输入，条件仍生效 -->
+        <div class="search-bar">
+          <input v-model="keyword" class="search-input" placeholder="按标题或作者搜索" maxlength="50"
+                 @keyup.enter="search" />
+          <button class="search-btn" :disabled="loading" @click="search">搜索</button>
+        </div>
+      </div>
+
+      <!-- 分区 Tab：待审核 / 已审核 -->
+      <div class="audit-tabs">
+        <span class="audit-tab" :class="{ active: activeTab === 'pending' }" @click="switchTab('pending')">待审核</span>
+        <span class="audit-tab" :class="{ active: activeTab === 'reviewed' }" @click="switchTab('reviewed')">已审核</span>
+      </div>
 
       <div v-if="loading && list.length === 0" class="empty">加载中…</div>
-      <div v-else-if="list.length === 0" class="empty">暂无待审核视频</div>
+      <div v-else-if="list.length === 0" class="empty">{{ activeTab === 'pending' ? '暂无待审核视频' : '暂无已审核视频' }}</div>
 
       <table v-else class="audit-table">
         <thead>
@@ -15,6 +32,7 @@
             <th class="col-cat">分类</th>
             <th class="col-author">作者</th>
             <th class="col-time">提交时间</th>
+            <!-- 两 Tab 表头保持一致（固定列宽），避免切换抖动 -->
             <th class="col-op">操作</th>
           </tr>
         </thead>
@@ -23,11 +41,18 @@
             <td class="col-id">{{ v.id }}</td>
             <td class="title-cell" :title="v.description" @click="goPreview(v.id)">{{ v.title }}</td>
             <td class="col-cat">{{ categoryText(v.category) }}</td>
-            <td class="col-author">{{ v.author || ('UP#' + v.userId) }}</td>
+            <!-- 作者列：显示作者昵称（后端联查填充 authorNickname），兜底显示 UP#id -->
+            <td class="col-author">{{ v.authorNickname || ('UP#' + v.userId) }}</td>
             <td class="col-time">{{ formatTime(v.createTime) }}</td>
             <td class="col-op">
-              <button class="op-btn pass" :disabled="busy === v.id" @click="onAudit(v.id, 1)">通过</button>
-              <button class="op-btn reject" :disabled="busy === v.id" @click="onAudit(v.id, 2)">驳回</button>
+              <!-- 待审核：通过/驳回操作按钮；已审核：只展示审核结果徽章 -->
+              <template v-if="activeTab === 'pending'">
+                <button class="op-btn pass" :disabled="busy === v.id" @click="onAudit(v.id, 1)">通过</button>
+                <button class="op-btn reject" :disabled="busy === v.id" @click="onAudit(v.id, 2)">驳回</button>
+              </template>
+              <span v-else class="result-badge" :class="'result-' + v.status">
+                {{ v.status === 1 ? '已通过' : '已驳回' }}
+              </span>
             </td>
           </tr>
         </tbody>
@@ -59,15 +84,23 @@ const total = ref(0)
 const loading = ref(false)
 const busy = ref(null)        // 当前正在审核的视频 ID（按钮置灰防重复）
 const error = ref('')
+const activeTab = ref('pending') // pending=待审核 reviewed=已审核
+const keyword = ref('')          // 搜索框输入值（搜索后立即清空）
+const appliedKeyword = ref('')   // 实际生效的搜索关键词（输入框清空后条件仍保留）
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / size)))
 
-/** 拉取当前页的待审核视频 */
+/** 拉取当前页审核列表：待审核 status=0；已审核 status=-1（通过+驳回合并） */
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await getPendingVideos({ page: page.value, size })
+    const res = await getPendingVideos({
+      page: page.value,
+      size,
+      status: activeTab.value === 'pending' ? 0 : -1,
+      keyword: appliedKeyword.value || undefined
+    })
     list.value = res.data.records
     total.value = res.data.total
   } catch (e) {
@@ -77,6 +110,22 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+/** 切换分区 Tab：重置到第一页再加载 */
+function switchTab(key) {
+  if (key === activeTab.value) return
+  activeTab.value = key
+  page.value = 1
+  load()
+}
+
+/** 触发搜索：记录生效关键词并清空输入框（条件继续保留），重置到第一页 */
+function search() {
+  appliedKeyword.value = keyword.value.trim()
+  keyword.value = ''
+  page.value = 1
+  load()
 }
 
 function changePage(p) {
@@ -104,7 +153,7 @@ async function onAudit(id, status) {
   }
 }
 
-/** 点击标题进预览（已发布才能正常查看详情；待审核的预览仅作者可见，管理员会 403） */
+/** 点击标题跳转播放详情页：管理员对未发布视频也有查看权限（后端 detail 接口已放行管理员），可边看边审 */
 function goPreview(id) {
   router.push(`/video/detail/${id}`)
 }
@@ -144,9 +193,106 @@ onMounted(load)
 }
 
 .page-tip {
-  margin: 0 0 24px;
+  margin: 0;
   font-size: 13px;
   color: #999;
+}
+
+/* 卡片头部：标题区在左，搜索栏固定在右上角 */
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.head-left {
+  min-width: 0;
+}
+
+.search-bar {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 分区 Tab：待审核 / 已审核 */
+.audit-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.audit-tab {
+  padding: 6px 18px;
+  border: 1px solid #e0e0e6;
+  border-radius: 15px;
+  font-size: 13px;
+  color: #666;
+  cursor: pointer;
+  background: #fff;
+}
+
+.audit-tab.active {
+  background: #fb7299;
+  border-color: #fb7299;
+  color: #fff;
+}
+
+/* 搜索栏 */
+.search-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 320px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid #ddd;
+  border-radius: 17px;
+  font-size: 13px;
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: #fb7299;
+}
+
+.search-btn {
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid #fb7299;
+  border-radius: 17px;
+  background: #fb7299;
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 已审核结果徽章 */
+.result-badge {
+  display: inline-block;
+  padding: 2px 12px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+
+.result-badge.result-1 {
+  background: #e6f7ee;
+  color: #2a9d5f;
+}
+
+.result-badge.result-2 {
+  background: #fdeeee;
+  color: #e04343;
 }
 
 .audit-table {
@@ -177,7 +323,8 @@ onMounted(load)
 
 .col-op {
   white-space: nowrap;
-  width: 1%;
+  width: 130px;
+  text-align: center;
 }
 
 .title-cell {

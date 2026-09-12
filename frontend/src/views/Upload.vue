@@ -64,8 +64,6 @@
         <span class="video-title" @click="goDetail(v.id)">{{ v.title }}</span>
         <!-- 状态徽章：动态 class 换颜色 -->
         <span class="status-badge" :class="'status-' + v.status">{{ statusText(v.status) }}</span>
-        <!-- 阶段一测试入口：待审核时可以点"通过审核"，正式管理后台在运营阶段做 -->
-        <button v-if="v.status === 0" class="audit-btn" @click="passAudit(v.id)">通过审核</button>
       </div>
     </div>
   </div>
@@ -74,7 +72,7 @@
 <script setup>
 import { ref, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { uploadVideo, getMyVideos, auditVideo } from '../api/video'
+import { uploadVideo, getMyVideos } from '../api/video'
 
 const router = useRouter()
 
@@ -171,16 +169,6 @@ async function loadMyVideos() {
 /** 状态数字 → 文案 */
 function statusText(status) {
   return { 0: '待审核', 1: '已发布', 2: '已驳回', 3: '已下架' }[status] || '未知'
-}
-
-/** 阶段一测试入口：点"通过审核"把视频状态改为已发布 */
-async function passAudit(id) {
-  try {
-    await auditVideo(id, 1)
-    loadMyVideos()
-  } catch (e) {
-    error.value = e.message || '审核失败'
-  }
 }
 
 /** 跳转到播放详情页 */
@@ -405,21 +393,5 @@ select.input {
 .status-3 {
   background: #f0f0f3;
   color: #888;
-}
-
-.audit-btn {
-  border: 1px solid #fb7299;
-  background: transparent;
-  color: #fb7299;
-  border-radius: 12px;
-  padding: 3px 12px;
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.audit-btn:hover {
-  background: #fb7299;
-  color: #fff;
 }
 </style>

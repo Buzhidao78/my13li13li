@@ -16,7 +16,8 @@
           </div>
           <div v-if="profile.sign" class="sign">{{ profile.sign }}</div>
           <div class="stats">
-            <span><b>{{ profile.videoCount || 0 }}</b> 视频</span>
+            <!-- 点击"视频"数字/文字 → 切换到视频 Tab（与粉丝/关注统计一致） -->
+            <span @click="switchTab('videos')"><b>{{ profile.videoCount || 0 }}</b> 视频</span>
             <span @click="switchTab('followers')"><b>{{ profile.followerCount || 0 }}</b> 粉丝</span>
             <span @click="switchTab('following')"><b>{{ profile.followingCount || 0 }}</b> 关注</span>
           </div>

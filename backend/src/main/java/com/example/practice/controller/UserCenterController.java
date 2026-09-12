@@ -8,7 +8,9 @@ import com.example.practice.vo.VideoVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,6 +42,15 @@ public class UserCenterController {
     public Result<IPage<VideoVO>> history(@RequestParam(defaultValue = "1") long page,
                                           @RequestParam(defaultValue = "12") long size) {
         return Result.success(videoService.myHistory(currentUserId(), page, size));
+    }
+
+    /**
+     * 删除单条观看历史（按 videoId，仅删除"我"的记录）
+     */
+    @DeleteMapping("/history/{videoId}")
+    public Result<Void> deleteHistory(@PathVariable Long videoId) {
+        videoService.deleteHistory(currentUserId(), videoId);
+        return Result.success();
     }
 
     private Long currentUserId() {

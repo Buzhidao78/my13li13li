@@ -13,13 +13,12 @@
             <span class="m-meta">剩 {{ memberInfo.remainDays }} 天 · 到期 {{ formatDate(memberInfo.memberExpire) }}</span>
           </div>
         </div>
-        <!-- 右侧动作区：纵向排列"会员充值 / 我的消息 / 待办练习 / 审核"
-             审核仅管理员可见；纵向位置在"观看历史"tab 之后，符合用户指定的排序 -->
+        <!-- 右侧动作区：纵向排列"会员充值 / 我的消息 / 待办清单"
+             （审核入口已移至导航栏，仅管理员可见，带待审核红点） -->
         <div class="actions">
           <button class="action-btn recharge" @click="goRecharge">会员充值</button>
           <button class="action-btn message" @click="goMessage">我的消息</button>
           <button class="action-btn todo" @click="goTodo">待办清单</button>
-          <button v-if="isAdmin" class="action-btn audit" @click="goAudit">审核</button>
         </div>
       </div>
 
@@ -32,7 +31,7 @@
           :class="{ active: activeTab === t.key }"
           @click="switchTab(t.key)"
         >
-          {{ t.label }}
+          {{ tabLabel(t) }}
         </span>
       </div>
 
@@ -77,16 +76,26 @@
               <span>{{ formatViews(v.playCount) }}播放</span>
             </div>
           </div>
+          <!-- 行内操作：下架(仅已发布)/重新上架(仅已下架)/删除；@click.stop 防止触发整行跳详情 -->
+          <div class="row-actions">
+            <template v-if="activeTab === 'videos'">
+              <button v-if="v.status === 1" class="row-btn" @click.stop="onOffline(v)">下架</button>
+              <button v-if="v.status === 3" class="row-btn" @click.stop="onRepublish(v)">重新上架</button>
+              <button class="row-btn danger" @click.stop="onDeleteVideo(v)">删除</button>
+            </template>
+            <button v-if="activeTab === 'favorites'" class="row-btn" @click.stop="onUnfavorite(v)">取消收藏</button>
+            <button v-if="activeTab === 'history'" class="row-btn danger" @click.stop="onDeleteHistory(v)">删除历史</button>
+          </div>
         </div>
       </div>
+      </template>
 
-      <!-- 分页(视频 tab 与用户 tab 共用) -->
+      <!-- 分页(五个 tab 共用：视频 tab 与用户 tab 都走同一套 page/total 状态) -->
       <div v-if="totalPages > 1" class="pagination">
         <button class="page-btn" :disabled="page <= 1" @click="changePage(page - 1)">上一页</button>
         <span class="page-info">第 {{ page }} / {{ totalPages }} 页</span>
         <button class="page-btn" :disabled="page >= totalPages" @click="changePage(page + 1)">下一页</button>
       </div>
-      </template>
     </div>
   </div>
 </template>
@@ -95,7 +104,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { userStore } from '../store/user'
-import { getMyVideos, getFavorites, getHistory } from '../api/video'
+import { getMyVideos, getFavorites, getHistory, offlineVideo, republishVideo, deleteVideo, toggleFavorite, deleteHistory } from '../api/video'
 import { getMemberInfo } from '../api/order'
 import { getFollowers, getFollowing } from '../api/follow'
 
@@ -115,6 +124,17 @@ const page = ref(1)
 const total = ref(0)
 const pageSize = 8
 
+/** 关注/粉丝数量（供 tab 标签展示，进入页面时轻量拉取） */
+const followingCount = ref(0)
+const fansCount = ref(0)
+
+/** tab 标签文案：关注/粉丝动态拼接数量，如"我的关注(2)" */
+function tabLabel(t) {
+  if (t.key === 'following') return `我的关注(${followingCount.value})`
+  if (t.key === 'followers') return `我的粉丝(${fansCount.value})`
+  return t.label
+}
+
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 const emptyText = computed(() => ({ videos: '还没有投稿，去首页点"投稿"上传吧', favorites: '还没有收藏，看到喜欢的视频点"收藏"', history: '还没有观看记录', following: '还没有关注任何人', followers: '还没有粉丝' }[activeTab.value]))
 
@@ -124,9 +144,6 @@ const isUserTab = computed(() => activeTab.value === 'following' || activeTab.va
 const firstChar = computed(() =>
   userStore.user?.nickname ? userStore.user.nickname.charAt(0) : '用'
 )
-
-/** 是否为管理员：控制右侧"审核"按钮显示 */
-const isAdmin = computed(() => userStore.user?.role === 1)
 
 /** 跳转到会员充值页（需登录，路由守卫兜底） */
 function goRecharge() {
@@ -146,11 +163,6 @@ function goMessage() {
 /** 跳转到某个用户的主页(关注/粉丝列表点击) */
 function goUser(id) {
   router.push(`/user/${id}`)
-}
-
-/** 跳转到管理员审核台 */
-function goAudit() {
-  router.push('/admin/audit')
 }
 
 /** 切换 tab：先清空列表（避免展示上一个 tab 的残留），再加载 */
@@ -178,6 +190,22 @@ async function loadMember() {
   } catch {
     // 拉取失败保持 null，不展示会员行
     memberInfo.value = null
+  }
+}
+
+/** 拉取关注/粉丝数量：size=1 只取 total（轻量），供 tab 标签展示 */
+async function loadCounts() {
+  const id = userStore.user?.id
+  if (!id) return
+  try {
+    const [f, fs] = await Promise.all([
+      getFollowing(id, { page: 1, size: 1 }),
+      getFollowers(id, { page: 1, size: 1 })
+    ])
+    followingCount.value = f.data.total
+    fansCount.value = fs.data.total
+  } catch {
+    // 拉取失败保持 0，不影响主流程
   }
 }
 
@@ -212,6 +240,70 @@ function goDetail(id) {
   router.push(`/video/detail/${id}`)
 }
 
+/** 下架我的视频：仅"已发布"可下架；成功后刷新列表，状态徽章变为"已下架" */
+async function onOffline(v) {
+  if (!window.confirm(`确定下架《${v.title}》吗？下架后前台不再展示`)) return
+  try {
+    await offlineVideo(v.id)
+    await loadPage()
+  } catch (e) {
+    window.alert(e.message || '下架失败')
+  }
+}
+
+/** 重新上架：仅"已下架"可操作；成功后刷新列表，状态徽章变为"已发布" */
+async function onRepublish(v) {
+  if (!window.confirm(`确定重新上架《${v.title}》吗？上架后前台恢复展示`)) return
+  try {
+    await republishVideo(v.id)
+    await loadPage()
+  } catch (e) {
+    window.alert(e.message || '重新上架失败')
+  }
+}
+
+/** 删除我的视频：硬删除（联动清理评论/收藏/历史/通知及文件），不可恢复，需二次确认 */
+async function onDeleteVideo(v) {
+  if (!window.confirm(`确定删除《${v.title}》吗？删除后不可恢复！`)) return
+  if (!window.confirm('再次确认：视频及所有互动数据将被永久删除，确定继续？')) return
+  try {
+    await deleteVideo(v.id)
+    await reloadAfterRemove()
+  } catch (e) {
+    window.alert(e.message || '删除失败')
+  }
+}
+
+/** 取消收藏：调 toggle 接口（已收藏 -> 取消），成功后刷新列表 */
+async function onUnfavorite(v) {
+  try {
+    await toggleFavorite(v.id)
+    await reloadAfterRemove()
+  } catch (e) {
+    window.alert(e.message || '取消收藏失败')
+  }
+}
+
+/** 删除单条观看历史：成功后刷新列表 */
+async function onDeleteHistory(v) {
+  if (!window.confirm(`确定删除观看历史《${v.title}》吗？`)) return
+  try {
+    await deleteHistory(v.id)
+    await reloadAfterRemove()
+  } catch (e) {
+    window.alert(e.message || '删除失败')
+  }
+}
+
+/** 删除/取消收藏后刷新当前页；若删掉的是本页最后一条则回退一页，避免停在空页 */
+async function reloadAfterRemove() {
+  await loadPage()
+  if (list.value.length === 0 && page.value > 1) {
+    page.value--
+    await loadPage()
+  }
+}
+
 function statusText(status) {
   return { 0: '待审核', 1: '已发布', 2: '已驳回', 3: '已下架' }[status] || '未知'
 }
@@ -234,6 +326,7 @@ function formatDate(t) {
 
 load()
 loadMember()
+loadCounts()
 </script>
 
 <style scoped>
@@ -356,15 +449,6 @@ loadMember()
 }
 .action-btn.todo:hover {
   background: #58b7ff;
-  color: #fff;
-}
-
-.action-btn.audit {
-  color: #f59e0b;
-  border-color: #f59e0b;
-}
-.action-btn.audit:hover {
-  background: #f59e0b;
   color: #fff;
 }
 
@@ -533,6 +617,35 @@ loadMember()
   gap: 14px;
   font-size: 12px;
   color: #999;
+}
+
+/* 行内操作按钮：下架 / 取消收藏 / 删除历史 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.row-btn {
+  padding: 5px 14px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  color: #666;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.row-btn:hover {
+  border-color: #fb7299;
+  color: #fb7299;
+}
+
+.row-btn.danger:hover {
+  border-color: #f56c6c;
+  color: #f56c6c;
 }
 
 .status-badge {

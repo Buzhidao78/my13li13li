@@ -9,6 +9,7 @@ import com.example.practice.constant.NotificationType;
 import com.example.practice.constant.VideoStatus;
 import com.example.practice.entity.User;
 import com.example.practice.entity.UserFollow;
+import com.example.practice.entity.UserNotification;
 import com.example.practice.entity.Video;
 import com.example.practice.entity.VideoCoin;
 import com.example.practice.entity.VideoComment;
@@ -16,6 +17,7 @@ import com.example.practice.entity.VideoFavorite;
 import com.example.practice.entity.WatchHistory;
 import com.example.practice.mapper.UserFollowMapper;
 import com.example.practice.mapper.UserMapper;
+import com.example.practice.mapper.UserNotificationMapper;
 import com.example.practice.mapper.VideoCoinMapper;
 import com.example.practice.mapper.VideoCommentMapper;
 import com.example.practice.mapper.VideoFavoriteMapper;
@@ -90,6 +92,9 @@ public class VideoServiceImpl implements VideoService {
     private UserFollowMapper followMapper;
 
     @Autowired
+    private UserNotificationMapper notificationMapper;
+
+    @Autowired
     private NotificationService notificationService;
 
     @Autowired
@@ -112,7 +117,10 @@ public class VideoServiceImpl implements VideoService {
         }
 
         String videoUrl = uploadUtils.saveVideo(file);
-        String coverUrl = (cover == null || cover.isEmpty()) ? null : uploadUtils.saveImage(cover);
+        // 封面：优先用用户上传的封面；未上传时用 FFmpeg 抽取视频首帧兜底（抽取失败则封面为 null，不阻塞投稿）
+        String coverUrl = (cover == null || cover.isEmpty())
+                ? uploadUtils.extractCoverFromVideo(videoUrl)
+                : uploadUtils.saveImage(cover);
 
         Video video = new Video();
         video.setUserId(userId);
@@ -174,7 +182,7 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
-    public IPage<VideoVO> feed(Long userId, long page, long size) {
+    public IPage<VideoVO> feed(Long userId, long page, long size, String sort) {
         // 1. 查我关注的用户 ID 列表（拉模式 Feed：实时查关注关系，数据量小够用）
         List<UserFollow> follows = followMapper.selectList(new LambdaQueryWrapper<UserFollow>()
                 .eq(UserFollow::getFollowerId, userId));
@@ -184,12 +192,16 @@ public class VideoServiceImpl implements VideoService {
             return new Page<>(page, size);
         }
 
-        // 2. 查这些用户发布的视频，按发布时间倒序分页
-        Page<Video> p = videoMapper.selectPage(new Page<>(page, size),
-                new LambdaQueryWrapper<Video>()
-                        .eq(Video::getStatus, VideoStatus.PUBLISHED)
-                        .in(Video::getUserId, followingIds)
-                        .orderByDesc(Video::getCreateTime));
+        // 2. 查这些用户发布的视频；排序与首页一致：hot=按播放量（最热），默认按发布时间（最新）
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<Video>()
+                .eq(Video::getStatus, VideoStatus.PUBLISHED)
+                .in(Video::getUserId, followingIds);
+        if ("hot".equals(sort)) {
+            wrapper.orderByDesc(Video::getPlayCount).orderByDesc(Video::getCreateTime);
+        } else {
+            wrapper.orderByDesc(Video::getCreateTime);
+        }
+        Page<Video> p = videoMapper.selectPage(new Page<>(page, size), wrapper);
         return p.convert(this::toVO);
     }
 
@@ -212,7 +224,9 @@ public class VideoServiceImpl implements VideoService {
         }
         boolean published = video.getStatus().equals(VideoStatus.PUBLISHED);
         boolean isOwner = currentUserId != null && currentUserId.equals(video.getUserId());
-        if (!published && !isOwner) {
+        // 管理员可查看任何状态的视频：审核台上点击标题即可边看边审（未发布视频对普通用户仍不可见）
+        boolean isAdmin = isAdmin(currentUserId);
+        if (!published && !isOwner && !isAdmin) {
             throw new BusinessException("视频未发布，仅作者可见");
         }
 
@@ -248,16 +262,30 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
-    public IPage<VideoVO> listPending(long page, long size, Long operatorId) {
+    public IPage<VideoVO> listPending(long page, long size, Integer status, String keyword, Long operatorId) {
         // 仅管理员可调用：与 audit 接口一致的权限模型
         if (!isAdmin(operatorId)) {
-            throw new BusinessException("无权限：仅管理员可查看待审核视频");
+            throw new BusinessException("无权限：仅管理员可查看审核列表");
+        }
+        LambdaQueryWrapper<Video> wrapper = new LambdaQueryWrapper<>();
+        // 状态筛选：status=0 待审核（默认）；status=-1 已审核（通过1+驳回2 合并展示）；其它数字精确匹配
+        if (status != null && status == -1) {
+            wrapper.in(Video::getStatus, VideoStatus.PUBLISHED, VideoStatus.REJECTED);
+        } else {
+            wrapper.eq(Video::getStatus, status == null ? VideoStatus.PENDING : status);
+        }
+        // 关键词搜索：标题模糊匹配，或作者昵称/用户名匹配（inSql 子查询 user 表）
+        String kw = keyword == null ? "" : keyword.trim();
+        if (StringUtils.hasText(kw)) {
+            // 单引号转义，防止拼进子查询的 SQL 注入
+            String safe = kw.replace("'", "''");
+            wrapper.and(w -> w.like(Video::getTitle, kw)
+                    .or().inSql(Video::getUserId,
+                            "SELECT id FROM user WHERE deleted = 0 AND (nickname LIKE '%" + safe + "%' OR username LIKE '%" + safe + "%')"));
         }
         // 按提交时间正序排：先提交的先审，避免新视频堆积在最后一页
-        Page<Video> p = videoMapper.selectPage(new Page<>(page, size),
-                new LambdaQueryWrapper<Video>()
-                        .eq(Video::getStatus, VideoStatus.PENDING)
-                        .orderByAsc(Video::getCreateTime));
+        wrapper.orderByAsc(Video::getCreateTime);
+        Page<Video> p = videoMapper.selectPage(new Page<>(page, size), wrapper);
         return p.convert(this::toVO);
     }
 
@@ -300,6 +328,22 @@ public class VideoServiceImpl implements VideoService {
     }
 
     @Override
+    public void republish(Long id, Long operatorId) {
+        Video video = videoMapper.selectById(id);
+        if (video == null) {
+            throw new BusinessException("视频不存在");
+        }
+        requireOwnerOrAdmin(video, operatorId);
+        if (!video.getStatus().equals(VideoStatus.OFFLINE)) {
+            throw new BusinessException("只有已下架的视频才能重新上架");
+        }
+        Video update = new Video();
+        update.setId(id);
+        update.setStatus(VideoStatus.PUBLISHED);
+        videoMapper.updateById(update);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteVideo(Long id, Long operatorId) {
         Video video = videoMapper.selectById(id);
@@ -307,16 +351,20 @@ public class VideoServiceImpl implements VideoService {
             throw new BusinessException("视频不存在");
         }
         requireOwnerOrAdmin(video, operatorId);
-        // 级联清理互动数据：评论/收藏/观看历史/投币（避免留下孤儿记录）
+        // 级联清理互动数据：评论/收藏/观看历史/投币/关联通知（避免留下孤儿记录）
         commentMapper.delete(new LambdaQueryWrapper<VideoComment>().eq(VideoComment::getVideoId, id));
         favoriteMapper.delete(new LambdaQueryWrapper<VideoFavorite>().eq(VideoFavorite::getVideoId, id));
         historyMapper.delete(new LambdaQueryWrapper<WatchHistory>().eq(WatchHistory::getVideoId, id));
         coinMapper.delete(new LambdaQueryWrapper<VideoCoin>().eq(VideoCoin::getVideoId, id));
+        notificationMapper.delete(new LambdaQueryWrapper<UserNotification>().eq(UserNotification::getVideoId, id));
         videoMapper.deleteById(id);
         // 清理 Redis 中的计数/点赞集合（否则残留 key 会让 detail 显示过期计数）
         stringRedisTemplate.delete(KEY_PLAY + id);
         stringRedisTemplate.delete(KEY_LIKE + id);
         stringRedisTemplate.delete(KEY_LIKE_COUNT + id);
+        // 清理磁盘文件：视频本体 + 封面（失败仅记日志，不影响主流程）
+        uploadUtils.deleteIfExists(video.getVideoUrl());
+        uploadUtils.deleteIfExists(video.getCoverUrl());
     }
 
     // ==================== 模块2：播放计数 ====================
@@ -507,6 +555,14 @@ public class VideoServiceImpl implements VideoService {
     }
 
     // ==================== 模块5：个人中心 ====================
+
+    @Override
+    public void deleteHistory(Long userId, Long videoId) {
+        // 删除我的单条观看历史：按"用户+视频"定位（一个用户对同一视频只会有一条历史记录，重复观看会更新时间）
+        historyMapper.delete(new LambdaQueryWrapper<WatchHistory>()
+                .eq(WatchHistory::getUserId, userId)
+                .eq(WatchHistory::getVideoId, videoId));
+    }
 
     @Override
     public IPage<VideoVO> myFavorites(Long userId, long page, long size) {

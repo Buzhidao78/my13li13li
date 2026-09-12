@@ -31,10 +31,11 @@ public interface VideoService {
     IPage<VideoVO> search(String keyword, long page, long size, String sort);
 
     /**
-     * 关注动态流（需登录）：我关注的用户发布的视频，按发布时间倒序（拉模式 Feed）
+     * 关注动态流（需登录）：我关注的用户发布的视频（拉模式 Feed）
      * 数据来源：user_follow 查我关注的人 → video 表按 user_id IN (...) 查已发布视频
+     * 排序与首页一致：sort=hot 按播放量（最热），否则按发布时间（最新）
      */
-    IPage<VideoVO> feed(Long userId, long page, long size);
+    IPage<VideoVO> feed(Long userId, long page, long size, String sort);
 
     /**
      * 查询某个用户已发布的视频（公开接口，他人主页用，不含待审核/驳回）
@@ -58,7 +59,7 @@ public interface VideoService {
      * @param page       页码（从 1 开始）
      * @param size       每页条数
      */
-    IPage<VideoVO> listPending(long page, long size, Long operatorId);
+    IPage<VideoVO> listPending(long page, long size, Integer status, String keyword, Long operatorId);
 
     /**
      * 审核视频：只有"待审核"状态能审核，可改为"已发布"或"已驳回"
@@ -78,6 +79,12 @@ public interface VideoService {
      * @param operatorId 当前操作者 ID
      */
     void deleteVideo(Long id, Long operatorId);
+
+    /**
+     * 重新上架（作者本人或管理员）：仅"已下架"状态可重新上架，恢复为已发布
+     * @param operatorId 当前操作者 ID
+     */
+    void republish(Long id, Long operatorId);
 
     /**
      * 播放计数（Redis 增量，定时落库）+ 登录用户记录观看历史
@@ -123,4 +130,9 @@ public interface VideoService {
      * 分页查询"观看历史"（个人中心用，按观看时间倒序）
      */
     IPage<VideoVO> myHistory(Long userId, long page, long size);
+
+    /**
+     * 删除我的单条观看历史（个人中心"观看历史"的删除按钮）
+     */
+    void deleteHistory(Long userId, Long videoId);
 }

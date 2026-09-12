@@ -7,7 +7,7 @@
         <div class="banner-title">{{ memberInfo.levelName }}</div>
         <div class="banner-desc">
           <template v-if="memberInfo.isMember">
-            有效期至 {{ memberInfo.memberExpire }} · 剩余 {{ memberInfo.remainDays }} 天
+            有效期至 {{ formatTime(memberInfo.memberExpire) }} · 剩余 {{ memberInfo.remainDays }} 天
           </template>
           <template v-else>开通会员，尊享专属权益</template>
         </div>

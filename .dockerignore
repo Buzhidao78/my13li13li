@@ -1,0 +1,32 @@
+# =========================================================
+# Docker 构建上下文排除项（根目录，两个 Dockerfile 的 context 都是项目根）
+# 作用：大幅减小发送给 Docker daemon 的上下文体积，加快构建
+# =========================================================
+
+# 版本控制与 IDE
+.git
+.gitignore
+.vscode
+.idea
+
+# 前端构建产物/依赖（镜像内会重新 npm install / npm run build）
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# 后端构建产物（镜像内会重新 mvn package）
+backend/target
+backend/*.iml
+
+# 本地运行时数据（上传的视频/封面等，进容器由数据卷提供，无需打进镜像）
+backend/upload
+upload
+
+# 环境变量文件（含密码，禁止打进镜像）
+.env
+deploy/.env
+
+# 日志/临时文件
+*.log
+*.pid
+.DS_Store

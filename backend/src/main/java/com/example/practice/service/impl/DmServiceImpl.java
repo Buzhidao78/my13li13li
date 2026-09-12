@@ -26,7 +26,7 @@ import java.time.LocalDateTime;
 /**
  * 私信服务实现
  *
- * 表设计回顾（见 schema.sql）：
+ * 表设计回顾（见 init.sql）：
  * - dm_conversation：每个用户对每个对方存"一行自己的会话"，各存各的未读数与最后一条摘要，
  *   会话列表/未读总数都只需单表查询；
  * - dm_message：纯消息流水，不存已读状态（已读是会话级概念，由 unread_count 承载）。
