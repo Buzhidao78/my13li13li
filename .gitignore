@@ -32,5 +32,8 @@ video-community-images.tar.gz
 .test-token
 backend/test-upload.mp4
 
+# 面试准备材料（仅本地，不公开到 GitHub）
+my13li13li_面试模拟题.md
+
 # WorkBuddy 工作区记忆
 .workbuddy/
