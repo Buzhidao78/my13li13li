@@ -198,6 +198,26 @@ public class RabbitMQConfig {
         return new Queue(RabbitConstants.Q_ORDER_CLOSE, true);
     }
 
+    // ============ 视频封面异步抽帧：Direct 直连交换机 ============
+
+    /** 视频交换机（Direct，持久化） */
+    @Bean
+    public DirectExchange videoExchange() {
+        return new DirectExchange(RabbitConstants.EX_VIDEO, true, false);
+    }
+
+    /** 封面抽帧队列（durable=true：队列持久化，MQ 重启不丢） */
+    @Bean
+    public Queue coverExtractQueue() {
+        return new Queue(RabbitConstants.Q_COVER_EXTRACT, true);
+    }
+
+    /** 绑定：路由键 video.cover.extract 精确路由到抽帧队列 */
+    @Bean
+    public Binding coverExtractBinding() {
+        return BindingBuilder.bind(coverExtractQueue()).to(videoExchange()).with(RabbitConstants.RK_COVER_EXTRACT);
+    }
+
     /** 绑定：死信交换机按 order.close 路由到关单队列 */
     @Bean
     public Binding orderCloseBinding() {

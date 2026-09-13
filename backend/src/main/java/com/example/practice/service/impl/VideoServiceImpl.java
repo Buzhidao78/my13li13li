@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.practice.common.BusinessException;
 import com.example.practice.constant.NotificationType;
+import com.example.practice.constant.RabbitConstants;
 import com.example.practice.constant.VideoStatus;
+import com.example.practice.dto.CoverExtractMessage;
 import com.example.practice.entity.User;
 import com.example.practice.entity.UserFollow;
 import com.example.practice.entity.UserNotification;
@@ -29,9 +31,11 @@ import com.example.practice.util.UploadUtils;
 import com.example.practice.vo.CommentVO;
 import com.example.practice.vo.VideoVO;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -40,6 +44,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Duration;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -69,6 +74,15 @@ public class VideoServiceImpl implements VideoService {
 
     /** 点赞用户集合的过期时间：30 天（到期后 liked 状态重置，防止 key 无限膨胀） */
     private static final Duration LIKE_SET_TTL = Duration.ofDays(30);
+
+    /** Redis key 前缀：用户当日投币累计枚数（key = coin:user:{userId}:{yyyyMMdd}） */
+    private static final String KEY_COIN_DAILY = "coin:user:";
+
+    /** 每日投币上限：每人每天最多 3 枚 */
+    private static final int COIN_DAILY_LIMIT = 3;
+
+    /** 当日投币计数 key 的过期时间：30 天（次日自动换新 key，旧 key 定期清理防堆积） */
+    private static final Duration COIN_KEY_TTL = Duration.ofDays(30);
 
     @Autowired
     private VideoMapper videoMapper;
@@ -103,6 +117,9 @@ public class VideoServiceImpl implements VideoService {
     @Autowired
     private StringRedisTemplate stringRedisTemplate;
 
+    @Autowired
+    private RabbitTemplate rabbitTemplate;
+
     // ==================== 模块1：上传 / 查询 / 审核 ====================
 
     @Override
@@ -117,10 +134,9 @@ public class VideoServiceImpl implements VideoService {
         }
 
         String videoUrl = uploadUtils.saveVideo(file);
-        // 封面：优先用用户上传的封面；未上传时用 FFmpeg 抽取视频首帧兜底（抽取失败则封面为 null，不阻塞投稿）
-        String coverUrl = (cover == null || cover.isEmpty())
-                ? uploadUtils.extractCoverFromVideo(videoUrl)
-                : uploadUtils.saveImage(cover);
+        // 封面：优先用用户上传的封面；未上传时 coverUrl 先为 null，
+        // 入库后发 MQ 消息由 CoverExtractListener 异步 FFmpeg 抽帧回写（失败有占位图兜底，不阻塞上传接口）
+        String coverUrl = (cover == null || cover.isEmpty()) ? null : uploadUtils.saveImage(cover);
 
         Video video = new Video();
         video.setUserId(userId);
@@ -141,6 +157,16 @@ public class VideoServiceImpl implements VideoService {
             uploadUtils.deleteIfExists(videoUrl);
             uploadUtils.deleteIfExists(coverUrl);
             throw e;
+        }
+        // 未上传封面：发消息触发异步抽帧（发送失败/消费者失败都不影响投稿，封面走占位图兜底）
+        if (coverUrl == null) {
+            try {
+                rabbitTemplate.convertAndSend(RabbitConstants.EX_VIDEO, RabbitConstants.RK_COVER_EXTRACT,
+                        new CoverExtractMessage(video.getId(), videoUrl));
+            } catch (Exception e) {
+                // 发送失败（MQ 不可用等）：封面保持 null，前端占位图兜底，绝不让封面问题拖垮投稿主流程
+                log.warn("封面抽帧消息发送失败，封面将走占位图兜底, videoId={}", video.getId(), e);
+            }
         }
         return VideoVO.from(video, null);
     }
@@ -456,12 +482,23 @@ public class VideoServiceImpl implements VideoService {
         if (coin < 1 || coin > 2) {
             throw new BusinessException("单次投币数量为 1~2 枚");
         }
-        // 每日限额：查今天已经投了多少
-        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
-        Long todayCoins = coinMapper.selectCount(new LambdaQueryWrapper<VideoCoin>()
-                .eq(VideoCoin::getUserId, userId)
-                .ge(VideoCoin::getCreateTime, todayStart));
-        if (todayCoins + coin > 3) {
+        // 每日限额走 Redis 原子计数（并发防线）：
+        // INCRBY 是原子操作，并发请求按到达顺序抢占额度，天然不会"先查后插"竞态超发；
+        // key 按天隔离（coin:user:{userId}:{yyyyMMdd}），第二天自动换新 key 重新计数
+        String key = KEY_COIN_DAILY + userId + ":" + LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        ValueOperations<String, String> ops = stringRedisTemplate.opsForValue();
+        if (Boolean.FALSE.equals(stringRedisTemplate.hasKey(key))) {
+            // Redis 无今日记录（当天首次投，或 key 丢失）：以数据库存量为准重建计数（SUM 枚数），
+            // 避免 Redis 被清空后从零计导致当天可投超过 3 枚；setIfAbsent 保证并发下只初始化一次
+            Long dbToday = coinMapper.selectTotalCoinsSince(userId, LocalDate.now().atStartOfDay());
+            ops.setIfAbsent(key, String.valueOf(dbToday == null ? 0 : dbToday));
+            stringRedisTemplate.expire(key, COIN_KEY_TTL);
+        }
+        // 原子累加本次投币数，返回值 = 包含本次的当日累计枚数
+        Long total = ops.increment(key, coin);
+        if (total > COIN_DAILY_LIMIT) {
+            // 超限：把本次递增回滚，保持 key = 实际已投枚数，再拒绝
+            ops.decrement(key, coin);
             throw new BusinessException("今日投币已达上限（3 枚），明天再来吧");
         }
         // 记录投币 + 更新视频投币数
@@ -473,7 +510,7 @@ public class VideoServiceImpl implements VideoService {
         changeVideoCount(videoId, "coin_count", coin);
         // 通知视频作者（自己给自己视频投币不通知）
         notifyOwner(videoId, userId, NotificationType.COIN, null);
-        return (int) (3 - todayCoins - coin);
+        return (int) (COIN_DAILY_LIMIT - total);
     }
 
     @Override

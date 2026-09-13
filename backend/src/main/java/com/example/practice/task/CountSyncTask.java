@@ -44,10 +44,12 @@ public class CountSyncTask {
 
     /**
      * 把一类计数增量刷进数据库
-     * 流程：KEYS 找到所有增量 key → 逐个取出并删除（保证同一增量只落库一次）
-     *       → 用 SQL 原子自增累加到 MySQL 对应字段
-     * 注意：不用 getAndDelete()（GETDEL 命令需要 Redis 6.2+，本机 Redis 5.0 不支持），
-     *       改用 get + delete 两步完成"取出并删除"
+     * 流程：KEYS 找到所有增量 key → 逐个读取增量 → 用 SQL 原子自增累加到 MySQL
+     *       → 落库成功后用 DECRBY 把 Redis 里已落库的增量扣掉（key 不删除）
+     * 为什么用"扣回"而不是"取出即删"：
+     *   1. key 全程存在，读取与扣减之间新产生的播放保留在 key 里，不会被误删；
+     *   2. 落库失败时 key 纹丝不动，下一轮任务取到同样的增量重试，无需回补逻辑，增量天然不丢；
+     *   3. 唯一代价是极端情况下（扣减失败）增量可能重复落库——计数场景"宁可重复不可漏"。
      * 说明：练习场景数据量小用 KEYS；生产环境数据量大应改用 SCAN 游标遍历
      */
     private void syncToDb(String prefix, String column) {
@@ -62,19 +64,26 @@ public class CountSyncTask {
                 stringRedisTemplate.delete(key);
                 continue;
             }
-            // 先删除再落库：即使下面更新失败，最多丢这一次增量，不会重复累加
-            stringRedisTemplate.delete(key);
             try {
                 int delta = Integer.parseInt(deltaStr);
                 Long videoId = Long.parseLong(key.substring(prefix.length()));
-                // 视频不存在（已被删除）：跳过即可，key 已清理
+                // 视频不存在（已被删除）：增量失去意义，直接清理 key
                 if (videoMapper.selectById(videoId) == null) {
+                    stringRedisTemplate.delete(key);
                     continue;
                 }
                 // SQL 原子自增：count = count + delta，避免"先查后改"在并发下互相覆盖
                 videoMapper.update(null, new LambdaUpdateWrapper<Video>()
                         .eq(Video::getId, videoId)
                         .setSql("`" + column + "` = `" + column + "` + (" + delta + ")"));
+                // 落库成功后才扣减：把已落库部分从 Redis 增量中扣除，key 保留给后续新播放继续累加。
+                // 若扣减失败（Redis 抖动），最多导致该增量下一轮重复落库一次，符合"宁可重复不可漏"。
+                // 单独捕获：扣减失败不影响其他 key 继续同步
+                try {
+                    stringRedisTemplate.opsForValue().decrement(key, delta);
+                } catch (Exception ex) {
+                    log.warn("计数落库成功但扣减增量失败，下一轮将重复落库，key={}", key);
+                }
             } catch (NumberFormatException e) {
                 log.warn("计数同步解析失败，key={}", key);
             }

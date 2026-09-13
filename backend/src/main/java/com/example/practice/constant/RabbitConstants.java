@@ -52,4 +52,12 @@ public class RabbitConstants {
 
     /** 补偿消息类型：会员升级（支付后发送失败/未确认） */
     public static final String FAIL_TYPE_UPGRADE = "UPGRADE";
+
+    // ============ 视频封面异步抽帧（Direct 直连交换机，演示异步任务队列） ============
+    /** 视频业务交换机（Direct 类型） */
+    public static final String EX_VIDEO = "video.exchange";
+    /** 封面抽帧队列：上传未带封面时，异步调用 FFmpeg 抽帧，避免阻塞上传接口 */
+    public static final String Q_COVER_EXTRACT = "video.cover.extract.queue";
+    /** 封面抽帧路由键 */
+    public static final String RK_COVER_EXTRACT = "video.cover.extract";
 }
