@@ -152,8 +152,9 @@ async function loadSearchSuggest() {
   }
 }
 
-/** 搜索框聚焦：打开下拉（不重复请求，数据已在挂载时加载过） */
+/** 搜索框聚焦：打开下拉并刷新热词/历史（热词是实时累加的，挂载时那份数据会过期） */
 function onSearchFocus() {
+  loadSearchSuggest()
   searchDropdownOpen.value = true
 }
 
